@@ -144,6 +144,35 @@ def fetch_bybit_funding():
         print(f"Error Bybit funding: {e}")
         return {}
 
+def fetch_bybit_intervals():
+    try:
+        data = get_public_json("https://api.bybit.com/v5/market/instruments-info?category=linear&limit=1000")
+        result = {}
+        for item in data.get("result", {}).get("list", []):
+            sym = item.get("symbol")
+            if sym.endswith("USDT"):
+                coin = sym[:-4]
+                # Переводим минуты в часы
+                result[coin] = int(item.get("fundingInterval", 480)) // 60
+        return result
+    except Exception as e:
+        print(f"Error Bybit intervals: {e}")
+        return {}
+
+def fetch_binance_intervals():
+    try:
+        data = get_public_json("https://fapi.binance.com/fapi/v1/fundingInfo")
+        result = {}
+        for item in data:
+            sym = item.get("symbol")
+            if sym and sym.endswith("USDT"):
+                coin = sym[:-4]
+                result[coin] = int(item.get("fundingIntervalHours", 8))
+        return result
+    except Exception as e:
+        print(f"Error Binance intervals: {e}")
+        return {}
+
 def fetch_binance_spot():
     try:
         data = get_public_json("https://api.binance.com/api/v3/ticker/24hr")
@@ -255,9 +284,7 @@ def calc_position_size(spot_vol, fvol):
     return pos_min, pos_max
 
 def calc_hold_period(avg_funding, spread, net_8h, spot_src):
-    # Динамический расчет комиссий
     spot_fee = 0.20 if spot_src == "Gate" else 0.00 if spot_src == "MEXC" else 0.10
-    
     spread_cost = (spread or 0.2) / 100
     fut_cost    = (2 * TAKER_FEE) / 100
     spot_cost   = (2 * spot_fee) / 100
@@ -280,7 +307,7 @@ def calc_hold_period(avg_funding, spread, net_8h, spot_src):
     max_days = max(max_days, min_days + 1)
     return min_days, max_days
 
-def check_coin(coin, bn_f, bb_f, bn_spot, bb_spot, gate, mexc, bn_fvol):
+def check_coin(coin, bn_f, bb_f, bn_spot, bb_spot, gate, mexc, bn_fvol, bb_intervals, bn_intervals):
     bn_rate = bn_f.get(coin, {}).get("funding")
     bb_rate = bb_f.get(coin, {}).get("funding")
     pos = [x for x in [bn_rate, bb_rate] if x is not None and x > 0]
@@ -309,14 +336,46 @@ def check_coin(coin, bn_f, bb_f, bn_spot, bb_spot, gate, mexc, bn_fvol):
     if fvol < MIN_FUTURES_VOL:
         return None
 
+    # Рассчитываем окупаемость комиссий по средней ставке
     entry_exit = (4 * TAKER_FEE) / HOLD_PERIODS
     net_8h = avg - entry_exit
     if net_8h < MIN_NET_YIELD_8H:
         return None
 
-    annual = round(net_8h * 3 * 365, 1)
+    # Вычисляем точную годовую ставку для каждой фьючерсной биржи с учетом ее интервала
+    bn_interval = float(bn_intervals.get(coin, 8))
+    bb_interval = float(bb_intervals.get(coin, 8))
+    
+    annual_bn = 0.0
+    if bn_rate is not None:
+        net_8h_bn = bn_rate - entry_exit
+        annual_bn = net_8h_bn * (24.0 / bn_interval) * 365.0
+        
+    annual_bb = 0.0
+    if bb_rate is not None:
+        net_8h_bb = bb_rate - entry_exit
+        annual_bb = net_8h_bb * (24.0 / bb_interval) * 365.0
+        
+    # Выбираем самую выгодную фьючерсную биржу
+    if annual_bb >= annual_bn and bb_rate is not None:
+        best_annual = annual_bb
+        best_net_8h = bb_rate - entry_exit
+        futures_exchange = f"Bybit ({bb_rate:.4f}% | каждые {int(bb_interval)}ч)"
+        best_rate = bb_rate
+    elif bn_rate is not None:
+        best_annual = annual_bn
+        best_net_8h = bn_rate - entry_exit
+        futures_exchange = f"Binance ({bn_rate:.4f}% | каждые {int(bn_interval)}ч)"
+        best_rate = bn_rate
+    else:
+        return None
+        
+    # Если доходность лидера ниже 50%, отсеиваем
+    if best_annual < 50.0:
+        return None
+
     pos_min, pos_max = calc_position_size(spot_vol, fvol)
-    hold_min, hold_max = calc_hold_period(avg, spread, net_8h, spot_src)
+    hold_min, hold_max = calc_hold_period(best_rate, spread, best_net_8h, spot_src)
 
     if spread < 0.5 and spot_vol > 1e6 and fvol > 1e6:
         risk = "НИЗКИЙ"
@@ -325,34 +384,17 @@ def check_coin(coin, bn_f, bb_f, bn_spot, bb_spot, gate, mexc, bn_fvol):
     else:
         risk = "ВЫСОКИЙ"
         
-    # Какая фьючерсная биржа лучше
-    futures_exchanges = []
-    if bn_rate is not None and bn_rate >= avg:
-        futures_exchanges.append(f"Binance ({bn_rate:.4f}%)")
-    if bb_rate is not None and bb_rate >= avg:
-        futures_exchanges.append(f"Bybit ({bb_rate:.4f}%)")
-    
-    if not futures_exchanges:
-        if bn_rate is not None: futures_exchanges.append(f"Binance ({bn_rate:.4f}%)")
-        if bb_rate is not None: futures_exchanges.append(f"Bybit ({bb_rate:.4f}%)")
-        
-    futures_str = " или ".join(futures_exchanges)
-    
-    # Расчет ТП/СЛ (на 50% выше текущей цены спота)
     sl_price = round(price * 1.50, 4)
-    # Если монета очень дешевая, округляем до большего числа знаков
     if sl_price < 0.01:
         sl_price = round(price * 1.50, 6)
 
-    # Оценка комиссий
     spot_fee = 0.20 if spot_src == "Gate" else 0.00 if spot_src == "MEXC" else 0.10
     total_fee_est = spot_fee * 2 + TAKER_FEE * 2
 
     return {
         "symbol":      coin,
-        "avg":         round(avg, 5),
-        "net_8h":      round(net_8h, 5),
-        "annual":      annual,
+        "net_8h":      round(best_net_8h, 5),
+        "annual":      round(best_annual, 1),
         "spot_vol":    spot_vol,
         "fvol":        fvol,
         "spread":      spread,
@@ -362,7 +404,7 @@ def check_coin(coin, bn_f, bb_f, bn_spot, bb_spot, gate, mexc, bn_fvol):
         "pos_max":     pos_max,
         "hold_min":    hold_min,
         "hold_max":    hold_max,
-        "futures_str": futures_str,
+        "futures_str": futures_exchange,
         "sl_price":    sl_price,
         "fee_est":     round(total_fee_est, 2)
     }
@@ -375,11 +417,13 @@ def run_market_scan():
     gate    = fetch_gate_spot()
     mexc    = fetch_mexc_spot()
     bn_fvol = fetch_binance_futures_vol()
+    bb_intervals = fetch_bybit_intervals()
+    bn_intervals = fetch_binance_intervals()
 
     all_coins = set(bn_f.keys()) | set(bb_f.keys())
     passed = []
     for coin in all_coins:
-        r = check_coin(coin, bn_f, bb_f, bn_spot, bb_spot, gate, mexc, bn_fvol)
+        r = check_coin(coin, bn_f, bb_f, bn_spot, bb_spot, gate, mexc, bn_fvol, bb_intervals, bn_intervals)
         if r is not None:
             passed.append(r)
             
@@ -389,7 +433,7 @@ def run_market_scan():
 # ─── WEB ROUTES ───────────────────────────────────────────────────────────────
 @app.route('/')
 def home():
-    return "Gate.io BEAT Funding, Liquidation and 24/7 Market Scanner v2 is running!"
+    return "Gate.io BEAT Funding, Liquidation and 24/7 Market Scanner v3 is running!"
 
 @app.route('/check')
 def run_check():
@@ -449,24 +493,23 @@ def run_check():
             best_opportunities = run_market_scan()
             new_alerts = []
             for r in best_opportunities[:3]:
-                if r["annual"] >= 50.0:
-                    symbol = r["symbol"]
-                    if symbol not in alerted_coins or (current_time - alerted_coins[symbol] > 43200):
-                        psz = f"{fmt_usd(r['pos_min'])} – {fmt_usd(r['pos_max'])}"
-                        hld = f"{r['hold_min']}–{r['hold_max']} дней"
-                        
-                        new_alerts.append(
-                            f"🔔 <b>НАЙДЕНА СОЧНАЯ СТАВКА ({symbol})!</b>\n\n"
-                            f"Доходность: <b>~{r['annual']:.1f}% годовых</b> ({r['net_8h']:.4f}% за 8ч)\n"
-                            f"Спот биржа: <b>{r['spot_src']}</b> (объем: {fmt_usd(r['spot_vol'])})\n"
-                            f"Фьючерсы: <b>{r['futures_str']}</b>\n"
-                            f"Приблиз. комиссии (вход+выход): <b>~{r['fee_est']:.2f}%</b>\n"
-                            f"Спред: <b>{r['spread']:.3f}%</b> | Риск: <b>{r['risk']}</b>\n"
-                            f"Рекомендуемый вход: <b>{psz}</b>\n"
-                            f"Рекомендуемое удержание: <b>{hld}</b>\n"
-                            f"🛡️ <b>Защитный ТП/СЛ для выхода: {r['sl_price']} USDT</b>"
-                        )
-                        alerted_coins[symbol] = current_time
+                symbol = r["symbol"]
+                if symbol not in alerted_coins or (current_time - alerted_coins[symbol] > 43200):
+                    psz = f"{fmt_usd(r['pos_min'])} – {fmt_usd(r['pos_max'])}"
+                    hld = f"{r['hold_min']}–{r['hold_max']} дней"
+                    
+                    new_alerts.append(
+                        f"🔔 <b>НАЙДЕНА СОЧНАЯ СТАВКА ({symbol})!</b>\n\n"
+                        f"Доходность: <b>~{r['annual']:.1f}% годовых</b> ({r['net_8h']:.4f}% за 8ч)\n"
+                        f"Спот биржа: <b>{r['spot_src']}</b> (объем: {fmt_usd(r['spot_vol'])})\n"
+                        f"Фьючерсы: <b>{r['futures_str']}</b>\n"
+                        f"Приблиз. комиссии (вход+выход): <b>~{r['fee_est']:.2f}%</b>\n"
+                        f"Спред: <b>{r['spread']:.3f}%</b> | Риск: <b>{r['risk']}</b>\n"
+                        f"Рекомендуемый вход: <b>{psz}</b>\n"
+                        f"Рекомендуемое удержание: <b>{hld}</b>\n"
+                        f"🛡️ <b>Защитный ТП/СЛ для выхода: {r['sl_price']} USDT</b>"
+                    )
+                    alerted_coins[symbol] = current_time
             
             if new_alerts:
                 alerts.append("\n\n" + "\n\n".join(new_alerts))
