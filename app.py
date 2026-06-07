@@ -241,7 +241,40 @@ def fetch_bitget_history(coin):
         rates = [float(x["fundingRate"]) * 100 for x in data.get("data", []) if "fundingRate" in x]
         return rates
     except Exception as e:
-        print(f"Error fetching Bitget history for {coin}: {e}")
+        print(f"[Bitget Futures] History fetch failed for {coin}: {e}")
+        return []
+
+def fetch_whitebit_funding():
+    try:
+        data = get_public_json("https://whitebit.com/api/v4/public/futures")
+        result = {}
+        for item in data.get("result", []):
+            ticker_id = item.get("ticker_id", "")
+            if ticker_id.endswith("_PERP"):
+                coin = ticker_id[:-5]
+                funding = float(item.get("funding_rate", 0)) * 100
+                volume = float(item.get("money_volume", 0))
+                price = float(item.get("last_price", 0))
+                interval = float(item.get("funding_interval_minutes", 480)) / 60.0
+                result[coin] = {
+                    "funding": funding,
+                    "futures_vol": volume,
+                    "price": price,
+                    "interval": interval
+                }
+        return result
+    except Exception as e:
+        print(f"[WhiteBIT Futures] Funding rate fetch failed: {e}")
+        return {}
+
+def fetch_whitebit_history(coin):
+    try:
+        url = f"https://whitebit.com/api/v4/public/funding-history/{coin}_PERP"
+        data = get_public_json(url)
+        rates = [float(x["fundingRate"]) * 100 for x in data if "fundingRate" in x]
+        return rates
+    except Exception as e:
+        print(f"[WhiteBIT Futures] History fetch failed for {coin}: {e}")
         return []
 
 def fetch_binance_funding():
@@ -432,6 +465,8 @@ def get_futures_link(exchange, symbol):
         return f"https://www.okx.com/ru/trade-swap/{symbol}-usdt-swap"
     elif exchange == "Bitget":
         return f"https://www.bitget.com/ru/mix/usdt/{symbol}USDT"
+    elif exchange == "WhiteBIT":
+        return f"https://whitebit.com/ru/trade/{symbol}_PERP"
     return "#"
 
 def calc_position_size(spot_vol, fvol):
@@ -469,7 +504,7 @@ def calc_hold_period(avg_funding, spread, net_8h, spot_src):
     max_days = max(max_days, min_days + 1)
     return min_days, max_days
 
-def check_coin(coin, bn_f, bb_f, okx_f, bg_f, bn_spot, bb_spot, gate, mexc):
+def check_coin(coin, bn_f, bb_f, okx_f, bg_f, wb_f, bn_spot, bb_spot, gate, mexc):
     # Check Spot first
     sp = best_spot(coin, bn_spot, bb_spot, gate, mexc)
     if sp is None:
@@ -561,6 +596,23 @@ def check_coin(coin, bn_f, bb_f, okx_f, bg_f, bn_spot, bb_spot, gate, mexc):
                 "display": f"Bitget ({rate:.4f}% | каждые {int(interval)}ч)"
             })
 
+    # 5. WhiteBIT
+    if coin in wb_f:
+        rate = wb_f[coin]["funding"]
+        if rate > 0:
+            interval = wb_f[coin]["interval"]
+            rate_8h = rate * (8.0 / interval)
+            net_rate_8h = rate_8h - amortized_fee_8h
+            annual = net_rate_8h * 3.0 * 365.0
+            options.append({
+                "exchange": "WhiteBIT",
+                "annual": annual,
+                "rate": rate,
+                "net_8h": net_rate_8h,
+                "interval": interval,
+                "display": f"WhiteBIT ({rate:.4f}% | каждые {int(interval)}ч)"
+            })
+
     # Filter by MIN_EXCHANGES and funding bounds
     rates = [opt["rate"] for opt in options]
     if len(rates) < MIN_EXCHANGES:
@@ -588,7 +640,8 @@ def check_coin(coin, bn_f, bb_f, okx_f, bg_f, bn_spot, bb_spot, gate, mexc):
         bn_f.get(coin, {}).get("futures_vol", 0) if isinstance(bn_f.get(coin), dict) else 0,
         bb_f.get(coin, {}).get("futures_vol", 0) if isinstance(bb_f.get(coin), dict) else 0,
         okx_f.get(coin, {}).get("futures_vol", 0) if isinstance(okx_f.get(coin), dict) else 0,
-        bg_f.get(coin, {}).get("futures_vol", 0) if isinstance(bg_f.get(coin), dict) else 0
+        bg_f.get(coin, {}).get("futures_vol", 0) if isinstance(bg_f.get(coin), dict) else 0,
+        wb_f.get(coin, {}).get("futures_vol", 0) if isinstance(wb_f.get(coin), dict) else 0
     )
     if fvol < MIN_FUTURES_VOL:
         return None
@@ -610,6 +663,8 @@ def check_coin(coin, bn_f, bb_f, okx_f, bg_f, bn_spot, bb_spot, gate, mexc):
         hist_rates = fetch_okx_history(coin)
     elif target_exchange == "Bitget":
         hist_rates = fetch_bitget_history(coin)
+    elif target_exchange == "WhiteBIT":
+        hist_rates = fetch_whitebit_history(coin)
     else:
         hist_rates = []
         
@@ -657,7 +712,7 @@ def check_coin(coin, bn_f, bb_f, okx_f, bg_f, bn_spot, bb_spot, gate, mexc):
         "amortized_fee_8h": round(amortized_fee_8h, 5)
     }
 
-def check_futures_arbitrage(coin, bn_f, bb_f, okx_f, bg_f, bn_spot, bb_spot, gate, mexc):
+def check_futures_arbitrage(coin, bn_f, bb_f, okx_f, bg_f, wb_f, bn_spot, bb_spot, gate, mexc):
     # We require the entry and exit fee to open/close two positions:
     # 4 * TAKER_FEE = 0.20%. We amortize it over 21 periods.
     # Annual fee amortization is ~10.4%
@@ -672,6 +727,8 @@ def check_futures_arbitrage(coin, bn_f, bb_f, okx_f, bg_f, bn_spot, bb_spot, gat
         exchanges["OKX"] = okx_f[coin]
     if coin in bg_f and bg_f[coin]["funding"] is not None:
         exchanges["Bitget"] = bg_f[coin]
+    if coin in wb_f and wb_f[coin]["funding"] is not None:
+        exchanges["WhiteBIT"] = wb_f[coin]
         
     # We need at least 2 exchanges to perform futures-futures arbitrage
     if len(exchanges) < 2:
@@ -732,6 +789,7 @@ def check_futures_arbitrage(coin, bn_f, bb_f, okx_f, bg_f, bn_spot, bb_spot, gat
     elif best_pair["ex_long"] == "Bybit": hist_long = fetch_bybit_history(coin)
     elif best_pair["ex_long"] == "OKX": hist_long = fetch_okx_history(coin)
     elif best_pair["ex_long"] == "Bitget": hist_long = fetch_bitget_history(coin)
+    elif best_pair["ex_long"] == "WhiteBIT": hist_long = fetch_whitebit_history(coin)
     else: hist_long = []
     
     # Fetch history for Short (ex_short)
@@ -739,6 +797,7 @@ def check_futures_arbitrage(coin, bn_f, bb_f, okx_f, bg_f, bn_spot, bb_spot, gat
     elif best_pair["ex_short"] == "Bybit": hist_short = fetch_bybit_history(coin)
     elif best_pair["ex_short"] == "OKX": hist_short = fetch_okx_history(coin)
     elif best_pair["ex_short"] == "Bitget": hist_short = fetch_bitget_history(coin)
+    elif best_pair["ex_short"] == "WhiteBIT": hist_short = fetch_whitebit_history(coin)
     else: hist_short = []
     
     if hist_long and hist_short:
@@ -819,6 +878,7 @@ def run_market_scan():
     bb_f    = fetch_bybit_funding()
     okx_f   = fetch_okx_funding()
     bg_f    = fetch_bitget_funding()
+    wb_f    = fetch_whitebit_funding()
     
     bn_spot = fetch_binance_spot()
     bb_spot = fetch_bybit_spot()
@@ -838,19 +898,19 @@ def run_market_scan():
         bb_f[coin]["interval"] = float(bb_intervals.get(coin, 8))
         bb_f[coin]["futures_vol"] = bb_f[coin].get("futures_vol", 0)
 
-    all_coins = set(bn_f.keys()) | set(bb_f.keys()) | set(okx_f.keys()) | set(bg_f.keys())
+    all_coins = set(bn_f.keys()) | set(bb_f.keys()) | set(okx_f.keys()) | set(bg_f.keys()) | set(wb_f.keys())
     
     spot_futures = []
     futures_futures = []
     
     for coin in all_coins:
         # 1. Spot-Futures
-        sf_r = check_coin(coin, bn_f, bb_f, okx_f, bg_f, bn_spot, bb_spot, gate, mexc)
+        sf_r = check_coin(coin, bn_f, bb_f, okx_f, bg_f, wb_f, bn_spot, bb_spot, gate, mexc)
         if sf_r is not None:
             spot_futures.append(sf_r)
             
         # 2. Futures-Futures
-        ff_r = check_futures_arbitrage(coin, bn_f, bb_f, okx_f, bg_f, bn_spot, bb_spot, gate, mexc)
+        ff_r = check_futures_arbitrage(coin, bn_f, bb_f, okx_f, bg_f, wb_f, bn_spot, bb_spot, gate, mexc)
         if ff_r is not None:
             futures_futures.append(ff_r)
             
