@@ -140,7 +140,6 @@ def get_public_json(url):
                 return json.loads(r.read().decode())
         except Exception as e:
             last_err = e
-            print(f"Failed to fetch {target_url}: {e}")
             continue
             
     raise last_err
@@ -152,7 +151,7 @@ def fetch_binance_history(coin):
         rates = [float(x["fundingRate"]) * 100 for x in data if "fundingRate" in x]
         return rates
     except Exception as e:
-        print(f"Error fetching Binance history for {coin}: {e}")
+        print(f"[Binance Futures] History fetch failed for {coin}: {e}")
         return []
 
 def fetch_bybit_history(coin):
@@ -262,7 +261,7 @@ def fetch_binance_funding():
                 }
         return result
     except Exception as e:
-        print(f"Error Binance funding: {e}")
+        print(f"[Binance Futures] Funding rate fetch failed: {e}")
         return {}
 
 def fetch_bybit_funding():
@@ -330,7 +329,7 @@ def fetch_binance_spot():
                                 "source": "Binance"}
         return result
     except Exception as e:
-        print(f"Error Binance spot: {e}")
+        print(f"[Binance Spot] API is blocked (e.g. 418 Teapot): {e}. Fallback to other spot sources.")
         return {}
 
 def fetch_bybit_spot():
@@ -368,7 +367,7 @@ def fetch_gate_spot():
                                 "source": "Gate"}
         return result
     except Exception as e:
-        print(f"Error Gate spot: {e}")
+        print(f"[Gate.io Spot] API is blocked (e.g. 403 Forbidden): {e}. Fallback to other spot sources.")
         return {}
 
 def fetch_mexc_spot():
@@ -400,7 +399,7 @@ def fetch_binance_futures_vol():
                 result[sym[:-4]] = float(item.get("quoteVolume", 0))
         return result
     except Exception as e:
-        print(f"Error Binance fut volume: {e}")
+        print(f"[Binance Futures] Volume fetch failed: {e}")
         return {}
 
 def best_spot(coin, *sources):
