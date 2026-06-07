@@ -23,7 +23,7 @@ alerted_coins = {} # symbol -> timestamp
 
 # ─── НАСТРОЙКИ СКАНИРОВАНИЯ ───────────────────────────────────────────────────
 MIN_FUNDING      = 0.02
-MIN_EXCHANGES    = 2
+MIN_EXCHANGES    = 1
 MIN_VOLUME_24H   = 100_000
 MIN_FUTURES_VOL  = 300_000
 MAX_SPREAD_PCT   = 2.0
@@ -103,10 +103,45 @@ def gate_request(method, path, query_string="", payload_string=""):
 
 # ─── ЗАГРУЗКА ДАННЫХ ДЛЯ СКАНИРОВАНИЯ ─────────────────────────────────────────
 def get_public_json(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    ctx = ssl._create_unverified_context()
-    with urllib.request.urlopen(req, context=ctx) as r:
-        return json.loads(r.read().decode())
+    urls_to_try = [url]
+    
+    # If it is a Binance Spot URL, generate fallbacks
+    if url.startswith("https://api.binance.com/"):
+        path = url[len("https://api.binance.com/"):]
+        urls_to_try = [
+            url,
+            f"https://api-gcp.binance.com/{path}",
+            f"https://api1.binance.com/{path}",
+            f"https://api2.binance.com/{path}",
+            f"https://api3.binance.com/{path}",
+            f"https://api4.binance.com/{path}"
+        ]
+    # If it is a Binance Futures URL, generate fallbacks
+    elif url.startswith("https://fapi.binance.com/"):
+        path = url[len("https://fapi.binance.com/"):]
+        urls_to_try = [
+            url,
+            f"https://fapi-gcp.binance.com/{path}",
+            f"https://fapi1.binance.com/{path}",
+            f"https://fapi2.binance.com/{path}",
+            f"https://fapi3.binance.com/{path}"
+        ]
+        
+    last_err = None
+    for target_url in urls_to_try:
+        try:
+            req = urllib.request.Request(target_url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            })
+            ctx = ssl._create_unverified_context()
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as r:
+                return json.loads(r.read().decode())
+        except Exception as e:
+            last_err = e
+            print(f"Failed to fetch {target_url}: {e}")
+            continue
+            
+    raise last_err
 
 def fetch_binance_funding():
     try:
