@@ -921,10 +921,22 @@ def run_market_scan():
     spot_futures = sorted(spot_futures, key=lambda x: x["annual"], reverse=True)
     futures_futures = sorted(futures_futures, key=lambda x: x["annual"], reverse=True)
     
+    raw_funding = {}
+    for coin in all_coins:
+        raw_funding[coin] = {
+            "Binance": bn_f.get(coin, {}).get("funding"),
+            "Bybit": bb_f.get(coin, {}).get("funding"),
+            "OKX": okx_f.get(coin, {}).get("funding"),
+            "Bitget": bg_f.get(coin, {}).get("funding"),
+            "WhiteBIT": wb_f.get(coin, {}).get("funding"),
+        }
+    
     return {
         "spot_futures": spot_futures,
-        "futures_futures": futures_futures
+        "futures_futures": futures_futures,
+        "raw_funding": raw_funding
     }
+
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
@@ -958,7 +970,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         
         body {
-            font-family: \'Inter\', sans-serif;
+            font-family: 'Inter', sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
             line-height: 1.5;
@@ -1053,6 +1065,150 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             background: var(--text-muted);
             box-shadow: none;
             cursor: not-allowed;
+        }
+
+        /* Tabs CSS */
+        .tabs {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 12px;
+        }
+        
+        .tab-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            padding: 8px 16px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-color);
+        }
+
+        .tab-btn.active {
+            color: var(--primary);
+        }
+
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -13px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--primary);
+            box-shadow: 0 0 10px var(--primary);
+        }
+
+        /* Search & Grid CSS */
+        .search-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .search-input {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            color: var(--text-color);
+            padding: 10px 16px 10px 40px;
+            border-radius: 10px;
+            font-size: 14px;
+            width: 300px;
+            outline: none;
+            transition: all 0.2s ease;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%239CA3AF'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: 12px center;
+            background-size: 18px;
+        }
+
+        .search-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 10px rgba(124, 77, 255, 0.2);
+            background-color: rgba(255, 255, 255, 0.08);
+        }
+        
+        th.sortable {
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.2s ease;
+        }
+        
+        th.sortable:hover {
+            color: var(--text-color);
+        }
+        
+        th.sortable::after {
+            content: ' ↕';
+            font-size: 10px;
+            color: var(--text-muted);
+            opacity: 0.6;
+        }
+        
+        th.sortable.sort-desc::after {
+            content: ' ↓';
+            color: var(--primary);
+            opacity: 1;
+        }
+        
+        th.sortable.sort-asc::after {
+            content: ' ↑';
+            color: var(--primary);
+            opacity: 1;
+        }
+
+        /* Color classes for funding rate grid cells */
+        .rate-cell {
+            font-weight: 500;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        .rate-cell.pos-rate {
+            color: var(--success);
+        }
+
+        .rate-cell.pos-rate-high {
+            color: var(--success);
+            font-weight: 700;
+            text-shadow: 0 0 8px rgba(0, 230, 118, 0.3);
+        }
+
+        .rate-cell.neg-rate {
+            color: var(--danger);
+        }
+
+        .rate-cell.neg-rate-high {
+            color: var(--danger);
+            font-weight: 700;
+            text-shadow: 0 0 8px rgba(255, 23, 68, 0.3);
+        }
+
+        .rate-cell.no-rate {
+            color: var(--text-muted);
+            opacity: 0.4;
+        }
+
+        a.coin-name {
+            color: #fff;
+            font-weight: 600;
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+        
+        a.coin-name:hover {
+            color: var(--primary);
+            text-decoration: underline;
         }
 
         /* Exchange filter buttons */
@@ -1157,7 +1313,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
 
         /* Typography & badges inside tables */
-        .coin-name {
+        .coin-title {
             font-weight: 600;
             font-size: 16px;
             color: #fff;
@@ -1343,90 +1499,276 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             </div>
         </header>
 
-        <div class="exchange-filters">
-            <button class="filter-btn active" onclick="setFilter(\'All\')">Все биржи</button>
-            <button class="filter-btn" onclick="setFilter(\'Binance\')">Binance</button>
-            <button class="filter-btn" onclick="setFilter(\'Bybit\')">Bybit</button>
-            <button class="filter-btn" onclick="setFilter(\'OKX\')">OKX</button>
-            <button class="filter-btn" onclick="setFilter(\'Bitget\')">Bitget</button>
-            <button class="filter-btn" onclick="setFilter(\'WhiteBIT\')">WhiteBIT</button>
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchView('grid')">📊 Сводная сетка фандинга (CoinGlass)</button>
+            <button class="tab-btn" onclick="switchView('arbitrage')">⚡ Арбитражные связки (Сигналы)</button>
         </div>
 
-        <div class="card">
-            <div class="card-header">
-                <h2>📊 Найденные арбитражные связки</h2>
+        <!-- VIEW 1: FUNDING RATE GRID -->
+        <div id="gridViewContainer">
+            <div class="search-container">
+                <input type="text" class="search-input" id="gridSearchInput" placeholder="Поиск монеты (напр. BTC, SOL)..." oninput="onGridSearch()">
+                <div class="status-badge" style="margin: 0;">Всего монет на фьючерсах: <span id="totalGridCoins">0</span></div>
             </div>
-            <div class="table-responsive">
-                <table id="opportunitiesTable">
-                    <thead>
-                        <tr>
-                            <th>Монета</th>
-                            <th>Тип</th>
-                            <th>APY</th>
-                            <th>Net 8h</th>
-                            <th>Спред</th>
-                            <th>Направление (Купить ➔ Продать)</th>
-                            <th>Ставки фандинга</th>
-                            <th>Объем 24ч (Спот / Фьюч)</th>
-                            <th>Риск и Выход</th>
-                            <th>Действие</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tableBody">
-                        <tr>
-                            <td colspan="10" class="no-data">Загрузка данных сканирования...</td>
-                        </tr>
-                    </tbody>
-                </table>
+
+            <div class="card">
+                <div class="table-responsive">
+                    <table id="fundingGridTable">
+                        <thead>
+                            <tr>
+                                <th class="sortable sort-asc" onclick="sortGrid('symbol')" style="width: 15%;">Монета</th>
+                                <th class="sortable rate-cell" onclick="sortGrid('Binance')">Binance</th>
+                                <th class="sortable rate-cell" onclick="sortGrid('Bybit')">Bybit</th>
+                                <th class="sortable rate-cell" onclick="sortGrid('OKX')">OKX</th>
+                                <th class="sortable rate-cell" onclick="sortGrid('Bitget')">Bitget</th>
+                                <th class="sortable rate-cell" onclick="sortGrid('WhiteBIT')">WhiteBIT</th>
+                            </tr>
+                        </thead>
+                        <tbody id="gridTableBody">
+                            <tr>
+                                <td colspan="6" class="no-data">Загрузка сводной таблицы...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW 2: ARBITRAGE SIGNALS -->
+        <div id="arbitrageViewContainer" style="display: none;">
+            <div class="exchange-filters">
+                <button class="filter-btn active" onclick="setFilter('All')">Все биржи</button>
+                <button class="filter-btn" onclick="setFilter('Binance')">Binance</button>
+                <button class="filter-btn" onclick="setFilter('Bybit')">Bybit</button>
+                <button class="filter-btn" onclick="setFilter('OKX')">OKX</button>
+                <button class="filter-btn" onclick="setFilter('Bitget')">Bitget</button>
+                <button class="filter-btn" onclick="setFilter('WhiteBIT')">WhiteBIT</button>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2>📊 Найденные арбитражные связки</h2>
+                </div>
+                <div class="table-responsive">
+                    <table id="opportunitiesTable">
+                        <thead>
+                            <tr>
+                                <th>Монета</th>
+                                <th>Тип</th>
+                                <th>APY</th>
+                                <th>Net 8h</th>
+                                <th>Спред</th>
+                                <th>Направление (Купить ➔ Продать)</th>
+                                <th>Ставки фандинга</th>
+                                <th>Объем 24ч (Спот / Фьюч)</th>
+                                <th>Риск и Выход</th>
+                                <th>Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <tr>
+                                <td colspan="10" class="no-data">Загрузка данных сканирования...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        let currentFilter = \'All\';
+        let currentView = 'grid';
+        let currentFilter = 'All';
         let rawData = null;
+        let gridSearchText = '';
+        let gridSortCol = 'symbol';
+        let gridSortDesc = false;
 
         async function loadData(force = false) {
-            const overlay = document.getElementById(\'loadingOverlay\');
-            const refreshBtn = document.getElementById(\'refreshBtn\');
+            const overlay = document.getElementById('loadingOverlay');
+            const refreshBtn = document.getElementById('refreshBtn');
 
             if (force) {
-                overlay.classList.add(\'active\');
+                overlay.classList.add('active');
                 refreshBtn.disabled = true;
             }
 
             try {
-                const url = force ? \'/api/scan/force\' : \'/api/scan\';
-                const method = force ? \'POST\' : \'GET\';
+                const url = force ? '/api/scan/force' : '/api/scan';
+                const method = force ? 'POST' : 'GET';
                 const response = await fetch(url, { method });
                 rawData = await response.json();
                 
-                // Render
+                // Render both views
                 renderTable();
+                renderGridTable();
                 
                 // Update status badge
-                document.getElementById(\'lastScanTime\').innerText = rawData.last_scan_time;
+                document.getElementById('lastScanTime').innerText = rawData.last_scan_time;
             } catch (e) {
                 console.error(e);
-                alert(\'Ошибка при получении данных сканирования: \' + e);
+                alert('Ошибка при получении данных сканирования: ' + e);
             } finally {
                 if (force) {
-                    overlay.classList.remove(\'active\');
+                    overlay.classList.remove('active');
                     refreshBtn.disabled = false;
                 }
             }
+        }
+
+        function switchView(view) {
+            currentView = view;
+            const tabBtns = document.querySelectorAll('.tab-btn');
+            tabBtns.forEach(btn => {
+                if (btn.innerText.toLowerCase().includes(view === 'grid' ? 'сетка' : 'связки')) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+            
+            if (view === 'grid') {
+                document.getElementById('gridViewContainer').style.display = 'block';
+                document.getElementById('arbitrageViewContainer').style.display = 'none';
+            } else {
+                document.getElementById('gridViewContainer').style.display = 'none';
+                document.getElementById('arbitrageViewContainer').style.display = 'block';
+            }
+        }
+
+        function onGridSearch() {
+            gridSearchText = document.getElementById('gridSearchInput').value.trim().toUpperCase();
+            renderGridTable();
+        }
+
+        function sortGrid(column) {
+            if (gridSortCol === column) {
+                gridSortDesc = !gridSortDesc;
+            } else {
+                gridSortCol = column;
+                gridSortDesc = (column !== 'symbol');
+            }
+            
+            // Update UI indicators on headers
+            const headers = document.querySelectorAll('#fundingGridTable th.sortable');
+            headers.forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+                if (
+                    (column === 'symbol' && th.innerText.trim().toLowerCase().includes('монета')) ||
+                    (column !== 'symbol' && th.innerText.trim() === column)
+                ) {
+                    th.classList.add(gridSortDesc ? 'sort-desc' : 'sort-asc');
+                }
+            });
+            
+            renderGridTable();
+        }
+
+        function renderGridTable() {
+            const body = document.getElementById('gridTableBody');
+            const totalSpan = document.getElementById('totalGridCoins');
+            if (!rawData || !rawData.raw_funding) {
+                body.innerHTML = `<tr><td colspan="6" class="no-data">Нет данных фандинга</td></tr>`;
+                totalSpan.innerText = '0';
+                return;
+            }
+            
+            let list = [];
+            for (let coin in rawData.raw_funding) {
+                list.push({
+                    symbol: coin,
+                    rates: rawData.raw_funding[coin]
+                });
+            }
+            
+            // Search filter
+            if (gridSearchText) {
+                list = list.filter(item => item.symbol.includes(gridSearchText));
+            }
+            
+            totalSpan.innerText = list.length;
+            
+            // Sort
+            list.sort((a, b) => {
+                let valA, valB;
+                if (gridSortCol === 'symbol') {
+                    valA = a.symbol;
+                    valB = b.symbol;
+                    if (valA < valB) return gridSortDesc ? 1 : -1;
+                    if (valA > valB) return gridSortDesc ? -1 : 1;
+                    return 0;
+                } else {
+                    valA = a.rates[gridSortCol];
+                    valB = b.rates[gridSortCol];
+                    
+                    const aNull = (valA === undefined || valA === null);
+                    const bNull = (valB === undefined || valB === null);
+                    if (aNull && bNull) return 0;
+                    if (aNull) return 1;
+                    if (bNull) return -1;
+                    
+                    return gridSortDesc ? valB - valA : valA - valB;
+                }
+            });
+            
+            if (list.length === 0) {
+                body.innerHTML = `<tr><td colspan="6" class="no-data">Монеты не найдены</td></tr>`;
+                return;
+            }
+            
+            body.innerHTML = '';
+            list.forEach(item => {
+                const tr = document.createElement('tr');
+                
+                // Symbol
+                const tdSym = document.createElement('td');
+                const symbolLink = `https://www.coinglass.com/FundingRate/${item.symbol}`;
+                tdSym.innerHTML = `<a href="${symbolLink}" target="_blank" class="coin-name">${item.symbol}</a>`;
+                tr.appendChild(tdSym);
+                
+                // Exchanges
+                const exchanges = ['Binance', 'Bybit', 'OKX', 'Bitget', 'WhiteBIT'];
+                exchanges.forEach(ex => {
+                    const td = document.createElement('td');
+                    td.className = 'rate-cell';
+                    const r = item.rates[ex];
+                    
+                    if (r === undefined || r === null) {
+                        td.innerText = '-';
+                        td.classList.add('no-rate');
+                    } else {
+                        td.innerText = (r >= 0 ? '+' : '') + r.toFixed(4) + '%';
+                        if (r > 0) {
+                            if (r >= 0.05) {
+                                td.classList.add('pos-rate-high');
+                            } else {
+                                td.classList.add('pos-rate');
+                            }
+                        } else if (r < 0) {
+                            if (r <= -0.05) {
+                                td.classList.add('neg-rate-high');
+                            } else {
+                                td.classList.add('neg-rate');
+                            }
+                        }
+                    }
+                    tr.appendChild(td);
+                });
+                
+                body.appendChild(tr);
+            });
         }
 
         function setFilter(exchange) {
             currentFilter = exchange;
             
             // Update active class on buttons
-            const buttons = document.querySelectorAll(\'.filter-btn\');
+            const buttons = document.querySelectorAll('.filter-btn');
             buttons.forEach(btn => {
-                if (btn.innerText.includes(exchange) || (exchange === \'All\' && btn.innerText === \'Все биржи\')) {
-                    btn.classList.add(\'active\');
+                if (btn.innerText.includes(exchange) || (exchange === 'All' && btn.innerText === 'Все биржи')) {
+                    btn.classList.add('active');
                 } else {
-                    btn.classList.remove(\'active\');
+                    btn.classList.remove('active');
                 }
             });
 
@@ -1434,25 +1776,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
 
         function renderTable() {
-            const body = document.getElementById(\'tableBody\');
+            const body = document.getElementById('tableBody');
             if (!rawData) return;
 
-            // Collect both spot_futures and futures_futures
             let list = [];
             
             rawData.spot_futures.forEach(item => {
-                list.push({ ...item, type: \'Spot-Futures\' });
+                list.push({ ...item, type: 'Spot-Futures' });
             });
 
             rawData.futures_futures.forEach(item => {
-                list.push({ ...item, type: \'Futures-Futures\' });
+                list.push({ ...item, type: 'Futures-Futures' });
             });
 
-            // Filter list based on currentFilter
             let filtered = list;
-            if (currentFilter !== \'All\') {
+            if (currentFilter !== 'All') {
                 filtered = list.filter(item => {
-                    if (item.type === \'Spot-Futures\') {
+                    if (item.type === 'Spot-Futures') {
                         return item.spot_src === currentFilter || item.futures_str.includes(currentFilter);
                     } else {
                         return item.ex_long === currentFilter || item.ex_short === currentFilter;
@@ -1460,7 +1800,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 });
             }
 
-            // Sort by APY descending
             filtered.sort((a, b) => b.annual - a.annual);
 
             if (filtered.length === 0) {
@@ -1468,42 +1807,36 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 return;
             }
 
-            body.innerHTML = \'\';
+            body.innerHTML = '';
             filtered.forEach(item => {
-                const tr = document.createElement(\'tr\');
+                const tr = document.createElement('tr');
                 
-                // 1. Coin Symbol
-                const tdCoin = document.createElement(\'td\');
-                tdCoin.innerHTML = `<span class="coin-name">${item.symbol}</span>`;
+                const tdCoin = document.createElement('td');
+                tdCoin.innerHTML = `<span class="coin-title">${item.symbol}</span>`;
                 tr.appendChild(tdCoin);
                 
-                // 2. Type badge
-                const tdType = document.createElement(\'td\');
-                const typeClass = item.type === \'Spot-Futures\' ? \'badge-spot-fut\' : \'badge-fut-fut\';
-                tdType.innerHTML = `<span class="badge ${typeClass}">${item.type === \'Spot-Futures\' ? \'Спот-Фьюч\' : \'Фьюч-Фьюч\'}</span>`;
+                const tdType = document.createElement('td');
+                const typeClass = item.type === 'Spot-Futures' ? 'badge-spot-fut' : 'badge-fut-fut';
+                tdType.innerHTML = `<span class="badge ${typeClass}">${item.type === 'Spot-Futures' ? 'Спот-Фьюч' : 'Фьюч-Фьюч'}</span>`;
                 tr.appendChild(tdType);
                 
-                // 3. APY
-                const tdAPY = document.createElement(\'td\');
+                const tdAPY = document.createElement('td');
                 tdAPY.innerHTML = `<span class="apy-val">${item.annual.toFixed(1)}%</span>`;
                 tr.appendChild(tdAPY);
                 
-                // 4. Net 8h
-                const tdNet = document.createElement(\'td\');
+                const tdNet = document.createElement('td');
                 tdNet.innerHTML = `<span class="net-val">${item.net_8h.toFixed(4)}%</span>`;
                 tr.appendChild(tdNet);
                 
-                // 5. Spread
-                const tdSpread = document.createElement(\'td\');
-                const spreadSign = item.spread > 0 ? \'+\' : \'\';
-                const spreadColor = item.spread > 0 ? \'var(--success)\' : \'var(--text-color)\';
+                const tdSpread = document.createElement('td');
+                const spreadSign = item.spread > 0 ? '+' : '';
+                const spreadColor = item.spread > 0 ? 'var(--success)' : 'var(--text-color)';
                 tdSpread.innerHTML = `<span style="color: ${spreadColor}; font-weight: 500;">${spreadSign}${item.spread.toFixed(3)}%</span>`;
                 tr.appendChild(tdSpread);
                 
-                // 6. Direction & exchanges
-                const tdDir = document.createElement(\'td\');
-                if (item.type === \'Spot-Futures\') {
-                    const futEx = item.futures_str.split(\' \')[0];
+                const tdDir = document.createElement('td');
+                if (item.type === 'Spot-Futures') {
+                    const futEx = item.futures_str.split(' ')[0];
                     tdDir.innerHTML = `
                         <div class="direction-label">
                             <span class="exchange-tag" style="border-color: var(--info); color: var(--info);">${item.spot_src} Spot</span>
@@ -1522,9 +1855,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 }
                 tr.appendChild(tdDir);
                 
-                // 7. Funding Rates
-                const tdFunding = document.createElement(\'td\');
-                if (item.type === \'Spot-Futures\') {
+                const tdFunding = document.createElement('td');
+                if (item.type === 'Spot-Futures') {
                     tdFunding.innerHTML = `
                         <div style="font-size: 13px;">
                             <span>Ставка: <b>${item.rate.toFixed(4)}%</b></span>
@@ -1534,17 +1866,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 } else {
                     tdFunding.innerHTML = `
                         <div style="font-size: 13px;">
-                            <div>Long (${item.ex_long}): <b style="color: ${item.rate_long < 0 ? \'var(--success)\' : \'var(--text-color)\'}">${item.rate_long.toFixed(4)}%</b></div>
-                            <div>Short (${item.ex_short}): <b style="color: ${item.rate_short > 0 ? \'var(--success)\' : \'var(--text-color)\'}">${item.rate_short.toFixed(4)}%</b></div>
+                            <div>Long (${item.ex_long}): <b style="color: ${item.rate_long < 0 ? 'var(--success)' : 'var(--text-color)'}">${item.rate_long.toFixed(4)}%</b></div>
+                            <div>Short (${item.ex_short}): <b style="color: ${item.rate_short > 0 ? 'var(--success)' : 'var(--text-color)'}">${item.rate_short.toFixed(4)}%</b></div>
                         </div>
                     `;
                 }
                 tr.appendChild(tdFunding);
                 
-                // 8. Volumes
-                const tdVol = document.createElement(\'td\');
-                const spVol = item.spot_vol ? formatUsdCompact(item.spot_vol) : \'-\';
-                const fVol = item.fvol ? formatUsdCompact(item.fvol) : \'-\';
+                const tdVol = document.createElement('td');
+                const spVol = item.spot_vol ? formatUsdCompact(item.spot_vol) : '-';
+                const fVol = item.fvol ? formatUsdCompact(item.fvol) : '-';
                 tdVol.innerHTML = `
                     <div style="font-size: 13px; color: var(--text-muted);">
                         <div>Спот: <span style="color: var(--text-color);">${spVol}</span></div>
@@ -1553,10 +1884,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 `;
                 tr.appendChild(tdVol);
                 
-                // 9. Risk & Exit
-                const tdExit = document.createElement(\'td\');
-                if (item.type === \'Spot-Futures\') {
-                    const rClass = item.risk === \'НИЗКИЙ\' ? \'badge-risk-low\' : item.risk === \'СРЕДНИЙ\' ? \'badge-risk-med\' : \'badge-risk-high\';
+                const tdExit = document.createElement('td');
+                if (item.type === 'Spot-Futures') {
+                    const rClass = item.risk === 'НИЗКИЙ' ? 'badge-risk-low' : item.risk === 'СРЕДНИЙ' ? 'badge-risk-med' : 'badge-risk-high';
                     tdExit.innerHTML = `
                         <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start;">
                             <span class="badge ${rClass}">${item.risk} РИСК</span>
@@ -1574,12 +1904,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 }
                 tr.appendChild(tdExit);
                 
-                // 10. Actions
-                const tdAction = document.createElement(\'td\');
-                const linksContainer = document.createElement(\'div\');
-                linksContainer.className = \'trade-links\';
+                const tdAction = document.createElement('td');
+                const linksContainer = document.createElement('div');
+                linksContainer.className = 'trade-links';
                 
-                if (item.type === \'Spot-Futures\') {
+                if (item.type === 'Spot-Futures') {
                     const spotLink = getSpotLinkUrl(item.spot_src, item.symbol);
                     const futLink = getFuturesLinkUrl(item.target_exchange, item.symbol);
                     linksContainer.innerHTML = `
@@ -1602,17 +1931,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
 
         function formatUsdCompact(v) {
-            if (v >= 1e6) return \'$\' + (v / 1e6).toFixed(1) + \'M\';
-            if (v >= 1e3) return \'$\' + (v / 1e3).toFixed(0) + \'k\';
-            return \'$\' + v.toFixed(0);
+            if (v >= 1e6) return '$' + (v / 1e6).toFixed(1) + 'M';
+            if (v >= 1e3) return '$' + (v / 1e3).toFixed(0) + 'k';
+            return '$' + v.toFixed(0);
         }
 
         function getSpotLinkUrl(ex, sym) {
-            if (ex === \'Binance\') return `https://www.binance.com/ru/trade/${sym}_USDT`;
-            if (ex === \'Bybit\') return `https://www.bybit.com/ru-RU/trade/spot/${sym}/USDT`;
-            if (ex === \'Gate\') return `https://www.gate.io/ru/trade/${sym}_USDT`;
-            if (ex === \'MEXC\') return `https://www.mexc.com/ru-RU/exchange/${sym}_USDT`;
-            return \'#\';
+            if (ex === 'Binance') return `https://www.binance.com/ru/trade/${sym}_USDT`;
+            if (ex === 'Bybit') return `https://www.bybit.com/ru-RU/trade/spot/${sym}/USDT`;
+            if (ex === 'Gate') return `https://www.gate.io/ru/trade/${sym}_USDT`;
+            if (ex === 'MEXC') return `https://www.mexc.com/ru-RU/exchange/${sym}_USDT`;
+            return '#';
         }
 
         function getFuturesLinkUrl(ex, sym) {
@@ -1657,7 +1986,8 @@ def api_scan():
         "last_scan_time": last_scan_str,
         "elapsed_seconds": int(now - last_scan_timestamp),
         "spot_futures": cached_scan_data.get("spot_futures", []),
-        "futures_futures": cached_scan_data.get("futures_futures", [])
+        "futures_futures": cached_scan_data.get("futures_futures", []),
+        "raw_funding": cached_scan_data.get("raw_funding", {})
     })
 
 @app.route('/api/scan/force', methods=['POST'])
@@ -1676,8 +2006,10 @@ def api_scan_force():
         "last_scan_time": last_scan_str,
         "elapsed_seconds": 0,
         "spot_futures": cached_scan_data.get("spot_futures", []),
-        "futures_futures": cached_scan_data.get("futures_futures", [])
+        "futures_futures": cached_scan_data.get("futures_futures", []),
+        "raw_funding": cached_scan_data.get("raw_funding", {})
     })
+
 
 @app.route('/check')
 def run_check():
