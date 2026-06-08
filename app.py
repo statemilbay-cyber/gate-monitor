@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify
 import urllib.request
 import json
 import time
@@ -20,6 +20,10 @@ GATE_API_SECRET = os.environ.get("GATE_API_SECRET")
 # Глобальные переменные для планировщика сканирования
 last_scan_time = 0
 alerted_coins = {} # symbol -> timestamp
+
+# Кэширование результатов сканирования рынка для веб-панели
+cached_scan_data = None
+last_scan_timestamp = 0
 
 # ─── НАСТРОЙКИ СКАНИРОВАНИЯ ───────────────────────────────────────────────────
 MIN_FUNDING      = 0.02
@@ -922,10 +926,758 @@ def run_market_scan():
         "futures_futures": futures_futures
     }
 
+HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arbitrage Market Scanner</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #080B10;
+            --card-bg: rgba(20, 24, 33, 0.7);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --text-color: #F3F4F6;
+            --text-muted: #9CA3AF;
+            --primary: #7C4DFF;
+            --primary-glow: rgba(124, 77, 255, 0.4);
+            --success: #00E676;
+            --success-glow: rgba(0, 230, 118, 0.2);
+            --danger: #FF1744;
+            --danger-glow: rgba(255, 23, 68, 0.2);
+            --warning: #FFD600;
+            --warning-glow: rgba(255, 214, 0, 0.2);
+            --info: #00B0FF;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: \'Inter\', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.5;
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(124, 77, 255, 0.1) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(0, 176, 255, 0.08) 0%, transparent 40%);
+            background-attachment: fixed;
+            padding: 24px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 32px;
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 20px 24px;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .logo-section h1 {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #7C4DFF, #00B0FF);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-section p {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .status-badge {
+            font-size: 13px;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.04);
+            padding: 8px 14px;
+            border-radius: 10px;
+            border: 1px solid var(--card-border);
+        }
+
+        .status-badge span {
+            color: var(--text-color);
+            font-weight: 500;
+        }
+
+        .btn {
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 14px var(--primary-glow);
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px var(--primary-glow);
+            filter: brightness(1.1);
+        }
+
+        .btn:active {
+            transform: translateY(1px);
+        }
+
+        .btn:disabled {
+            background: var(--text-muted);
+            box-shadow: none;
+            cursor: not-allowed;
+        }
+
+        /* Exchange filter buttons */
+        .exchange-filters {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 24px;
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 14px;
+            padding: 8px;
+            width: fit-content;
+            backdrop-filter: blur(12px);
+        }
+
+        .filter-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .filter-btn:hover {
+            color: var(--text-color);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .filter-btn.active {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-color);
+            font-weight: 600;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.1);
+        }
+
+        /* Tables and cards */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            overflow: hidden;
+            margin-bottom: 32px;
+        }
+
+        .card-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--card-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+            width: 100%;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        th {
+            background: rgba(0, 0, 0, 0.2);
+            color: var(--text-muted);
+            font-weight: 500;
+            padding: 14px 24px;
+            border-bottom: 1px solid var(--card-border);
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--card-border);
+            vertical-align: middle;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        /* Typography & badges inside tables */
+        .coin-name {
+            font-weight: 600;
+            font-size: 16px;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .apy-val {
+            font-weight: 700;
+            font-size: 16px;
+            color: var(--success);
+            text-shadow: 0 0 10px rgba(0, 230, 118, 0.2);
+        }
+
+        .net-val {
+            font-weight: 500;
+            color: var(--text-color);
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-spot-fut {
+            background: rgba(0, 176, 255, 0.1);
+            color: var(--info);
+            border: 1px solid rgba(0, 176, 255, 0.2);
+        }
+
+        .badge-fut-fut {
+            background: rgba(124, 77, 255, 0.1);
+            color: var(--primary);
+            border: 1px solid rgba(124, 77, 255, 0.2);
+        }
+
+        .badge-risk-low {
+            background: rgba(0, 230, 118, 0.1);
+            color: var(--success);
+            border: 1px solid rgba(0, 230, 118, 0.2);
+        }
+
+        .badge-risk-med {
+            background: rgba(255, 214, 0, 0.1);
+            color: var(--warning);
+            border: 1px solid rgba(255, 214, 0, 0.2);
+        }
+
+        .badge-risk-high {
+            background: rgba(255, 23, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(255, 23, 68, 0.2);
+        }
+
+        .direction-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 500;
+        }
+
+        .exchange-tag {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .arrow {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        .trade-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            color: var(--text-color);
+            padding: 6px 12px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .trade-btn:hover {
+            background: var(--text-color);
+            color: var(--bg-color);
+            border-color: var(--text-color);
+        }
+
+        .trade-links {
+            display: flex;
+            gap: 6px;
+        }
+
+        /* Loading spinner */
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(8, 11, 16, 0.8);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .loading-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .overlay-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(124, 77, 255, 0.1);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .no-data {
+            padding: 40px 24px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="overlay-spinner"></div>
+        <div style="font-size: 18px; font-weight: 600; color: #fff;">Сканирование рынка...</div>
+        <div style="font-size: 14px; color: var(--text-muted); max-width: 300px; text-align: center;">Мы опрашиваем биржи. Это может занять до 30 секунд.</div>
+    </div>
+
+    <div class="container">
+        <header>
+            <div class="logo-section">
+                <h1>Arbitrage Market Scanner</h1>
+                <p>Дельта-нейтральный арбитраж в реальном времени</p>
+            </div>
+            <div class="controls">
+                <div class="status-badge" id="lastScanBadge">Обновлено: <span id="lastScanTime">Загрузка...</span></div>
+                <button class="btn" id="refreshBtn" onclick="triggerRescan()">
+                    <span id="btnSpinner" class="spinner" style="display:none;"></span>
+                    <span id="btnText">Обновить сейчас</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="exchange-filters">
+            <button class="filter-btn active" onclick="setFilter(\'All\')">Все биржи</button>
+            <button class="filter-btn" onclick="setFilter(\'Binance\')">Binance</button>
+            <button class="filter-btn" onclick="setFilter(\'Bybit\')">Bybit</button>
+            <button class="filter-btn" onclick="setFilter(\'OKX\')">OKX</button>
+            <button class="filter-btn" onclick="setFilter(\'Bitget\')">Bitget</button>
+            <button class="filter-btn" onclick="setFilter(\'WhiteBIT\')">WhiteBIT</button>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>📊 Найденные арбитражные связки</h2>
+            </div>
+            <div class="table-responsive">
+                <table id="opportunitiesTable">
+                    <thead>
+                        <tr>
+                            <th>Монета</th>
+                            <th>Тип</th>
+                            <th>APY</th>
+                            <th>Net 8h</th>
+                            <th>Спред</th>
+                            <th>Направление (Купить ➔ Продать)</th>
+                            <th>Ставки фандинга</th>
+                            <th>Объем 24ч (Спот / Фьюч)</th>
+                            <th>Риск и Выход</th>
+                            <th>Действие</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <tr>
+                            <td colspan="10" class="no-data">Загрузка данных сканирования...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentFilter = \'All\';
+        let rawData = null;
+
+        async function loadData(force = false) {
+            const overlay = document.getElementById(\'loadingOverlay\');
+            const refreshBtn = document.getElementById(\'refreshBtn\');
+
+            if (force) {
+                overlay.classList.add(\'active\');
+                refreshBtn.disabled = true;
+            }
+
+            try {
+                const url = force ? \'/api/scan/force\' : \'/api/scan\';
+                const method = force ? \'POST\' : \'GET\';
+                const response = await fetch(url, { method });
+                rawData = await response.json();
+                
+                // Render
+                renderTable();
+                
+                // Update status badge
+                document.getElementById(\'lastScanTime\').innerText = rawData.last_scan_time;
+            } catch (e) {
+                console.error(e);
+                alert(\'Ошибка при получении данных сканирования: \' + e);
+            } finally {
+                if (force) {
+                    overlay.classList.remove(\'active\');
+                    refreshBtn.disabled = false;
+                }
+            }
+        }
+
+        function setFilter(exchange) {
+            currentFilter = exchange;
+            
+            // Update active class on buttons
+            const buttons = document.querySelectorAll(\'.filter-btn\');
+            buttons.forEach(btn => {
+                if (btn.innerText.includes(exchange) || (exchange === \'All\' && btn.innerText === \'Все биржи\')) {
+                    btn.classList.add(\'active\');
+                } else {
+                    btn.classList.remove(\'active\');
+                }
+            });
+
+            renderTable();
+        }
+
+        function renderTable() {
+            const body = document.getElementById(\'tableBody\');
+            if (!rawData) return;
+
+            // Collect both spot_futures and futures_futures
+            let list = [];
+            
+            rawData.spot_futures.forEach(item => {
+                list.push({ ...item, type: \'Spot-Futures\' });
+            });
+
+            rawData.futures_futures.forEach(item => {
+                list.push({ ...item, type: \'Futures-Futures\' });
+            });
+
+            // Filter list based on currentFilter
+            let filtered = list;
+            if (currentFilter !== \'All\') {
+                filtered = list.filter(item => {
+                    if (item.type === \'Spot-Futures\') {
+                        return item.spot_src === currentFilter || item.futures_str.includes(currentFilter);
+                    } else {
+                        return item.ex_long === currentFilter || item.ex_short === currentFilter;
+                    }
+                });
+            }
+
+            // Sort by APY descending
+            filtered.sort((a, b) => b.annual - a.annual);
+
+            if (filtered.length === 0) {
+                body.innerHTML = `<tr><td colspan="10" class="no-data">Нет активных связок для выбранной биржи ${currentFilter}</td></tr>`;
+                return;
+            }
+
+            body.innerHTML = \'\';
+            filtered.forEach(item => {
+                const tr = document.createElement(\'tr\');
+                
+                // 1. Coin Symbol
+                const tdCoin = document.createElement(\'td\');
+                tdCoin.innerHTML = `<span class="coin-name">${item.symbol}</span>`;
+                tr.appendChild(tdCoin);
+                
+                // 2. Type badge
+                const tdType = document.createElement(\'td\');
+                const typeClass = item.type === \'Spot-Futures\' ? \'badge-spot-fut\' : \'badge-fut-fut\';
+                tdType.innerHTML = `<span class="badge ${typeClass}">${item.type === \'Spot-Futures\' ? \'Спот-Фьюч\' : \'Фьюч-Фьюч\'}</span>`;
+                tr.appendChild(tdType);
+                
+                // 3. APY
+                const tdAPY = document.createElement(\'td\');
+                tdAPY.innerHTML = `<span class="apy-val">${item.annual.toFixed(1)}%</span>`;
+                tr.appendChild(tdAPY);
+                
+                // 4. Net 8h
+                const tdNet = document.createElement(\'td\');
+                tdNet.innerHTML = `<span class="net-val">${item.net_8h.toFixed(4)}%</span>`;
+                tr.appendChild(tdNet);
+                
+                // 5. Spread
+                const tdSpread = document.createElement(\'td\');
+                const spreadSign = item.spread > 0 ? \'+\' : \'\';
+                const spreadColor = item.spread > 0 ? \'var(--success)\' : \'var(--text-color)\';
+                tdSpread.innerHTML = `<span style="color: ${spreadColor}; font-weight: 500;">${spreadSign}${item.spread.toFixed(3)}%</span>`;
+                tr.appendChild(tdSpread);
+                
+                // 6. Direction & exchanges
+                const tdDir = document.createElement(\'td\');
+                if (item.type === \'Spot-Futures\') {
+                    const futEx = item.futures_str.split(\' \')[0];
+                    tdDir.innerHTML = `
+                        <div class="direction-label">
+                            <span class="exchange-tag" style="border-color: var(--info); color: var(--info);">${item.spot_src} Spot</span>
+                            <span class="arrow">➔</span>
+                            <span class="exchange-tag" style="border-color: var(--primary); color: var(--primary);">${futEx} Futures</span>
+                        </div>
+                    `;
+                } else {
+                    tdDir.innerHTML = `
+                        <div class="direction-label">
+                            <span class="exchange-tag" style="border-color: var(--success); color: var(--success);">${item.ex_long} Long</span>
+                            <span class="arrow">➔</span>
+                            <span class="exchange-tag" style="border-color: var(--danger); color: var(--danger);">${item.ex_short} Short</span>
+                        </div>
+                    `;
+                }
+                tr.appendChild(tdDir);
+                
+                // 7. Funding Rates
+                const tdFunding = document.createElement(\'td\');
+                if (item.type === \'Spot-Futures\') {
+                    tdFunding.innerHTML = `
+                        <div style="font-size: 13px;">
+                            <span>Ставка: <b>${item.rate.toFixed(4)}%</b></span>
+                            <span style="color: var(--text-muted); margin-left: 6px;">(${item.interval}ч)</span>
+                        </div>
+                    `;
+                } else {
+                    tdFunding.innerHTML = `
+                        <div style="font-size: 13px;">
+                            <div>Long (${item.ex_long}): <b style="color: ${item.rate_long < 0 ? \'var(--success)\' : \'var(--text-color)\'}">${item.rate_long.toFixed(4)}%</b></div>
+                            <div>Short (${item.ex_short}): <b style="color: ${item.rate_short > 0 ? \'var(--success)\' : \'var(--text-color)\'}">${item.rate_short.toFixed(4)}%</b></div>
+                        </div>
+                    `;
+                }
+                tr.appendChild(tdFunding);
+                
+                // 8. Volumes
+                const tdVol = document.createElement(\'td\');
+                const spVol = item.spot_vol ? formatUsdCompact(item.spot_vol) : \'-\';
+                const fVol = item.fvol ? formatUsdCompact(item.fvol) : \'-\';
+                tdVol.innerHTML = `
+                    <div style="font-size: 13px; color: var(--text-muted);">
+                        <div>Спот: <span style="color: var(--text-color);">${spVol}</span></div>
+                        <div>Фьюч: <span style="color: var(--text-color);">${fVol}</span></div>
+                    </div>
+                `;
+                tr.appendChild(tdVol);
+                
+                // 9. Risk & Exit
+                const tdExit = document.createElement(\'td\');
+                if (item.type === \'Spot-Futures\') {
+                    const rClass = item.risk === \'НИЗКИЙ\' ? \'badge-risk-low\' : item.risk === \'СРЕДНИЙ\' ? \'badge-risk-med\' : \'badge-risk-high\';
+                    tdExit.innerHTML = `
+                        <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start;">
+                            <span class="badge ${rClass}">${item.risk} РИСК</span>
+                            <span style="font-size: 12px; color: var(--text-muted);">Стоп: <b>${item.sl_price}</b></span>
+                        </div>
+                    `;
+                } else {
+                    tdExit.innerHTML = `
+                        <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start;">
+                            <span class="badge badge-risk-high">ВЫСОКИЙ РИСК</span>
+                            <span style="font-size: 11px; color: var(--text-muted);">Long SL: <b>${item.long_sl}</b></span>
+                            <span style="font-size: 11px; color: var(--text-muted);">Short SL: <b>${item.short_sl}</b></span>
+                        </div>
+                    `;
+                }
+                tr.appendChild(tdExit);
+                
+                // 10. Actions
+                const tdAction = document.createElement(\'td\');
+                const linksContainer = document.createElement(\'div\');
+                linksContainer.className = \'trade-links\';
+                
+                if (item.type === \'Spot-Futures\') {
+                    const spotLink = getSpotLinkUrl(item.spot_src, item.symbol);
+                    const futLink = getFuturesLinkUrl(item.target_exchange, item.symbol);
+                    linksContainer.innerHTML = `
+                        <a href="${spotLink}" target="_blank" class="trade-btn">Spot ${item.spot_src}</a>
+                        <a href="${futLink}" target="_blank" class="trade-btn">Futures</a>
+                    `;
+                } else {
+                    const longLink = getFuturesLinkUrl(item.ex_long, item.symbol);
+                    const shortLink = getFuturesLinkUrl(item.ex_short, item.symbol);
+                    linksContainer.innerHTML = `
+                        <a href="${longLink}" target="_blank" class="trade-btn">${item.ex_long} Long</a>
+                        <a href="${shortLink}" target="_blank" class="trade-btn">${item.ex_short} Short</a>
+                    `;
+                }
+                tdAction.appendChild(linksContainer);
+                tr.appendChild(tdAction);
+
+                body.appendChild(tr);
+            });
+        }
+
+        function formatUsdCompact(v) {
+            if (v >= 1e6) return \'$\' + (v / 1e6).toFixed(1) + \'M\';
+            if (v >= 1e3) return \'$\' + (v / 1e3).toFixed(0) + \'k\';
+            return \'$\' + v.toFixed(0);
+        }
+
+        function getSpotLinkUrl(ex, sym) {
+            if (ex === \'Binance\') return `https://www.binance.com/ru/trade/${sym}_USDT`;
+            if (ex === \'Bybit\') return `https://www.bybit.com/ru-RU/trade/spot/${sym}/USDT`;
+            if (ex === \'Gate\') return `https://www.gate.io/ru/trade/${sym}_USDT`;
+            if (ex === \'MEXC\') return `https://www.mexc.com/ru-RU/exchange/${sym}_USDT`;
+            return \'#\';
+        }
+
+        function getFuturesLinkUrl(ex, sym) {
+            if (ex === \'Binance\' || ex.startsWith(\'Binance\')) return `https://www.binance.com/ru/futures/${sym}USDT`;
+            if (ex === \'Bybit\' || ex.startsWith(\'Bybit\')) return `https://www.bybit.com/ru-RU/trade/usdt/${sym}USDT`;
+            if (ex === \'OKX\' || ex.startsWith(\'OKX\')) return `https://www.okx.com/ru/trade-convert/stable/${sym.toLowerCase()}-usdt`;
+            if (ex === \'Bitget\' || ex.startsWith(\'Bitget\')) return `https://www.bitget.com/ru/mix/usdt/${sym}USDT`;
+            if (ex === \'WhiteBIT\' || ex.startsWith(\'WhiteBIT\')) return `https://whitebit.com/ru/trade/${sym}_PERP`;
+            return \'#\';
+        }
+
+        async function triggerRescan() {
+            await loadData(true);
+        }
+
+        // Load initial data on page load
+        loadData();
+    </script>
+</body>
+</html>"""
+
 # ─── WEB ROUTES ───────────────────────────────────────────────────────────────
 @app.route('/')
 def home():
-    return "Gate.io BEAT Funding, Liquidation and 24/7 Market Scanner v3 is running!"
+    return HTML_TEMPLATE
+
+@app.route('/api/scan')
+def api_scan():
+    global cached_scan_data, last_scan_timestamp
+    now = time.time()
+    # Кэш на 15 минут
+    if cached_scan_data is None or (now - last_scan_timestamp > 900):
+        try:
+            res = run_market_scan()
+            cached_scan_data = res
+            last_scan_timestamp = now
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+            
+    last_scan_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_scan_timestamp))
+    return jsonify({
+        "last_scan_time": last_scan_str,
+        "elapsed_seconds": int(now - last_scan_timestamp),
+        "spot_futures": cached_scan_data.get("spot_futures", []),
+        "futures_futures": cached_scan_data.get("futures_futures", [])
+    })
+
+@app.route('/api/scan/force', methods=['POST'])
+def api_scan_force():
+    global cached_scan_data, last_scan_timestamp
+    now = time.time()
+    try:
+        res = run_market_scan()
+        cached_scan_data = res
+        last_scan_timestamp = now
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+        
+    last_scan_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(last_scan_timestamp))
+    return jsonify({
+        "last_scan_time": last_scan_str,
+        "elapsed_seconds": 0,
+        "spot_futures": cached_scan_data.get("spot_futures", []),
+        "futures_futures": cached_scan_data.get("futures_futures", [])
+    })
 
 @app.route('/check')
 def run_check():
@@ -982,7 +1734,10 @@ def run_check():
     if current_time - last_scan_time > 3600:
         scan_status = "Scan executed"
         try:
+            global cached_scan_data, last_scan_timestamp
             result_scan = run_market_scan()
+            cached_scan_data = result_scan
+            last_scan_timestamp = current_time
             new_alerts = []
             
             # 1. Spot-Futures Alerts
