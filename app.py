@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 import urllib.request
 import json
 import time
@@ -1475,6 +1475,213 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             color: var(--text-muted);
             font-size: 15px;
         }
+
+        /* Portfolio Styles */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .summary-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 16px 20px;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s ease;
+        }
+        .summary-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+        .summary-card .title {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+        .summary-card .value {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+        .summary-card .sub-value {
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        
+        .live-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--success);
+            font-weight: 600;
+            background: rgba(0, 230, 118, 0.08);
+            padding: 4px 10px;
+            border-radius: 20px;
+            border: 1px solid rgba(0, 230, 118, 0.2);
+        }
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% {
+                transform: scale(0.9);
+                box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.7);
+            }
+            70% {
+                transform: scale(1);
+                box-shadow: 0 0 0 6px rgba(0, 230, 118, 0);
+            }
+            100% {
+                transform: scale(0.9);
+                box-shadow: 0 0 0 0 rgba(0, 230, 118, 0);
+            }
+        }
+        
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(6px);
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background: #0d1117;
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 520px;
+            padding: 24px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+            animation: modalFadeIn 0.2s ease-out;
+        }
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 12px;
+        }
+        .modal-title {
+            font-size: 18px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #7C4DFF, #00B0FF);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .close-btn {
+            color: var(--text-muted);
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            background: none;
+            border: none;
+            line-height: 1;
+        }
+        .close-btn:hover {
+            color: var(--text-color);
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .form-control {
+            width: 100%;
+            background: #161b22;
+            border: 1px solid var(--card-border);
+            color: var(--text-color);
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s ease;
+        }
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .form-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 24px;
+        }
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-color);
+            border: 1px solid var(--card-border);
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+        .btn-primary:hover {
+            filter: brightness(1.1);
+        }
+        .btn-action {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: background 0.2s;
+            color: var(--text-muted);
+        }
+        .btn-action:hover {
+            background: rgba(255,255,255,0.05);
+            color: var(--text-color);
+        }
+        .btn-action.delete:hover {
+            background: rgba(255, 23, 68, 0.1);
+            color: var(--danger);
+        }
     </style>
 </head>
 <body>
@@ -1502,6 +1709,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div class="tabs">
             <button class="tab-btn active" onclick="switchView('grid')">📊 Сводная сетка фандинга (CoinGlass)</button>
             <button class="tab-btn" onclick="switchView('arbitrage')">⚡ Арбитражные связки (Сигналы)</button>
+            <button class="tab-btn" onclick="switchView('portfolio')">💼 Мой Портфель</button>
         </div>
 
         <!-- VIEW 1: FUNDING RATE GRID -->
@@ -1574,6 +1782,165 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 </div>
             </div>
         </div>
+
+        <!-- VIEW 3: PORTFOLIO -->
+        <div id="portfolioViewContainer" style="display: none;">
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <div class="title">Всего инвестировано</div>
+                    <div class="value" id="portTotalInvested">$0.00</div>
+                    <div class="sub-value" style="color: var(--text-muted);">Тело позиций</div>
+                </div>
+                <div class="summary-card">
+                    <div class="title">Текущая стоимость</div>
+                    <div class="value" id="portCurrentValue">$0.00</div>
+                    <div class="sub-value" style="color: var(--text-muted);">Спот + Маржа фьюч + P&L</div>
+                </div>
+                <div class="summary-card">
+                    <div class="title">Общая прибыль (PnL)</div>
+                    <div class="value" id="portTotalPnl">$0.00</div>
+                    <div class="sub-value" id="portTotalPnlPct" style="font-weight: 600;">0.00%</div>
+                </div>
+                <div class="summary-card">
+                    <div class="title">Дневной фандинг</div>
+                    <div class="value" id="portDailyFunding" style="color: var(--success);">$0.00</div>
+                    <div class="sub-value" id="portWeightedApy" style="color: var(--success); font-weight: 600;">~0.0% APY</div>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div class="live-indicator">
+                    <div class="live-dot"></div>
+                    Live-котировки
+                </div>
+                <button class="btn" onclick="openAddModal()">
+                    <span>➕ Добавить позицию</span>
+                </button>
+            </div>
+
+            <div class="card">
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Монета</th>
+                                <th>Спот (Лонг)</th>
+                                <th>Фьючерсы (Шорт)</th>
+                                <th>Тело P&L</th>
+                                <th>Накопленный фандинг</th>
+                                <th>Текущий фандинг (24ч)</th>
+                                <th>Итоговый P&L</th>
+                                <th style="width: 100px; text-align: center;">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="portfolioTableBody">
+                            <tr>
+                                <td colspan="8" class="no-data">Загрузка позиций...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div> <!-- End container -->
+
+    <!-- Add Position Modal -->
+    <div id="addPositionModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Добавить арбитражную позицию</h3>
+                <button class="close-btn" onclick="closeAddModal()">&times;</button>
+            </div>
+            <div class="form-group">
+                <label>Монета (Тикер)</label>
+                <input type="text" id="addCoin" class="form-control" placeholder="Например: BEAT, BTC" required>
+            </div>
+            <div style="border: 1px solid var(--card-border); padding: 12px; border-radius: 8px; margin-bottom: 16px; background: rgba(255,255,255,0.01);">
+                <h4 style="font-size: 13px; margin-bottom: 8px; color: var(--primary);">Секция Спот (Покупка)</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Биржа</label>
+                        <select id="addSpotEx" class="form-control">
+                            <option value="MEXC">MEXC</option>
+                            <option value="Gate">Gate.io</option>
+                            <option value="Binance">Binance</option>
+                            <option value="Bybit">Bybit</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Цена входа (USDT)</label>
+                        <input type="number" id="addSpotEntry" class="form-control" step="any" placeholder="4.11899" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Количество монет</label>
+                    <input type="number" id="addSpotQty" class="form-control" step="any" placeholder="12.13" required>
+                </div>
+            </div>
+            <div style="border: 1px solid var(--card-border); padding: 12px; border-radius: 8px; margin-bottom: 16px; background: rgba(255,255,255,0.01);">
+                <h4 style="font-size: 13px; margin-bottom: 8px; color: var(--primary);">Секция Фьючерсы (Продажа)</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Биржа</label>
+                        <select id="addFuturesEx" class="form-control">
+                            <option value="Bybit">Bybit</option>
+                            <option value="Gate">Gate.io</option>
+                            <option value="Binance">Binance</option>
+                            <option value="OKX">OKX</option>
+                            <option value="Bitget">Bitget</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Цена входа (USDT)</label>
+                        <input type="number" id="addFuturesEntry" class="form-control" step="any" placeholder="4.15050" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Количество монет (Размер)</label>
+                        <input type="number" id="addFuturesQty" class="form-control" step="any" placeholder="12.0" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Плечо (Leverage)</label>
+                        <input type="number" id="addLeverage" class="form-control" value="3" step="any" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Цена ликвидации (Опционально)</label>
+                    <input type="number" id="addCustomLiq" class="form-control" step="any" placeholder="Оставьте пустым для расчета">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Накопленный фандинг (USDT)</label>
+                <input type="number" id="addAccumFunding" class="form-control" step="any" value="0">
+            </div>
+            <div class="form-buttons">
+                <button class="btn-secondary" onclick="closeAddModal()">Отмена</button>
+                <button class="btn-primary" onclick="submitAddPosition()">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Funding Modal -->
+    <div id="editFundingModal" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Обновить накопленный фандинг</h3>
+                <button class="close-btn" onclick="closeFundingModal()">&times;</button>
+            </div>
+            <input type="hidden" id="editFundingPosId">
+            <div class="form-group">
+                <label>Накопленный фандинг (USDT)</label>
+                <input type="number" id="editFundingValue" class="form-control" step="any" placeholder="0.3357" required>
+                <p style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">
+                    Введите общую сумму фандинга, начисленную биржей за все время удержания позиции.
+                </p>
+            </div>
+            <div class="form-buttons">
+                <button class="btn-secondary" onclick="closeFundingModal()">Отмена</button>
+                <button class="btn-primary" onclick="submitFundingUpdate()">Обновить</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -1583,6 +1950,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         let gridSearchText = '';
         let gridSortCol = 'symbol';
         let gridSortDesc = false;
+        
+        let positionsData = [];
 
         async function loadData(force = false) {
             const overlay = document.getElementById('loadingOverlay');
@@ -1620,19 +1989,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             currentView = view;
             const tabBtns = document.querySelectorAll('.tab-btn');
             tabBtns.forEach(btn => {
-                if (btn.innerText.toLowerCase().includes(view === 'grid' ? 'сетка' : 'связки')) {
+                const text = btn.innerText.toLowerCase();
+                if (view === 'grid' && text.includes('сетка')) {
+                    btn.classList.add('active');
+                } else if (view === 'arbitrage' && text.includes('связки')) {
+                    btn.classList.add('active');
+                } else if (view === 'portfolio' && text.includes('портфель')) {
                     btn.classList.add('active');
                 } else {
                     btn.classList.remove('active');
                 }
             });
             
-            if (view === 'grid') {
-                document.getElementById('gridViewContainer').style.display = 'block';
-                document.getElementById('arbitrageViewContainer').style.display = 'none';
-            } else {
-                document.getElementById('gridViewContainer').style.display = 'none';
-                document.getElementById('arbitrageViewContainer').style.display = 'block';
+            document.getElementById('gridViewContainer').style.display = view === 'grid' ? 'block' : 'none';
+            document.getElementById('arbitrageViewContainer').style.display = view === 'arbitrage' ? 'block' : 'none';
+            document.getElementById('portfolioViewContainer').style.display = view === 'portfolio' ? 'block' : 'none';
+            
+            if (view === 'portfolio') {
+                loadPositions();
             }
         }
 
@@ -1957,8 +2331,270 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             await loadData(true);
         }
 
+        // Portfolio JS logic
+        async function loadPositions() {
+            try {
+                const response = await fetch('/api/positions');
+                positionsData = await response.json();
+                renderPortfolio();
+            } catch (e) {
+                console.error('Error loading positions:', e);
+            }
+        }
+
+        function renderPortfolio() {
+            const body = document.getElementById('portfolioTableBody');
+            if (!body) return;
+            if (positionsData.length === 0) {
+                body.innerHTML = `<tr><td colspan="8" class="no-data">У вас нет открытых позиций. Нажмите «Добавить позицию», чтобы внести сделку.</td></tr>`;
+                updatePortfolioSummary(0, 0, 0, 0, 0);
+                return;
+            }
+
+            let totalInvested = 0;
+            let totalCurrentVal = 0;
+            let totalPnl = 0;
+            let dailyFundingSum = 0;
+
+            body.innerHTML = '';
+            positionsData.forEach(pos => {
+                totalInvested += pos.invested;
+                
+                const spotCost = pos.spot_entry * pos.spot_qty;
+                const spotCurrent = pos.spot_price ? (pos.spot_price * pos.spot_qty) : null;
+                const spotPnL = pos.spot_pnl;
+                const spotPnLPct = pos.spot_pnl_pct;
+                
+                const futMargin = (pos.futures_entry * pos.futures_qty) / pos.leverage;
+                const futPnL = pos.futures_pnl;
+                const futPnLPct = pos.futures_pnl_pct;
+                
+                const bodyPnL = pos.net_body_pnl;
+                const accumFunding = pos.accum_funding;
+                const totalPnL = pos.total_pnl;
+                const totalPnLPct = pos.total_pnl_pct;
+                const dailyFunding = pos.daily_funding;
+                
+                totalCurrentVal += (spotCurrent !== null ? spotCurrent : spotCost) + futMargin + (futPnL || 0);
+                if (totalPnL !== null) totalPnl += totalPnL;
+                if (dailyFunding !== null) dailyFundingSum += dailyFunding;
+
+                const tr = document.createElement('tr');
+                
+                // Coin
+                const tdCoin = document.createElement('td');
+                tdCoin.innerHTML = `<span class="coin-name">${pos.coin}</span><br><span style="font-size:10px; color:var(--text-muted);">${pos.created_at}</span>`;
+                tr.appendChild(tdCoin);
+                
+                // Spot
+                const tdSpot = document.createElement('td');
+                if (pos.spot_price) {
+                    const sign = spotPnL >= 0 ? '+' : '';
+                    const cls = spotPnL >= 0 ? 'pos-rate' : 'neg-rate';
+                    tdSpot.innerHTML = `<b>${pos.spot_ex}</b><br><span style="font-size:12px; color:var(--text-muted);">${pos.spot_entry.toFixed(4)} ➡️ ${pos.spot_price.toFixed(4)}</span><br><span class="${cls}" style="font-size:12px; font-weight:600;">${sign}${spotPnL.toFixed(2)} USD (${sign}${spotPnLPct.toFixed(2)}%)</span>`;
+                } else {
+                    tdSpot.innerHTML = `<b>${pos.spot_ex}</b><br><span style="font-size:12px; color:var(--text-muted);">Вход: ${pos.spot_entry.toFixed(4)}</span><br><span style="font-size:12px; color:var(--text-muted);">- ожидание цены -</span>`;
+                }
+                tr.appendChild(tdSpot);
+                
+                // Futures
+                const tdFut = document.createElement('td');
+                if (pos.futures_price) {
+                    const sign = futPnL >= 0 ? '+' : '';
+                    const cls = futPnL >= 0 ? 'pos-rate' : 'neg-rate';
+                    tdFut.innerHTML = `<b>${pos.futures_ex} (${pos.leverage}x)</b><br><span style="font-size:12px; color:var(--text-muted);">${pos.futures_entry.toFixed(4)} ➡️ ${pos.futures_price.toFixed(4)}</span><br><span class="${cls}" style="font-size:12px; font-weight:600;">${sign}${futPnL.toFixed(2)} USD (${sign}${futPnLPct.toFixed(2)}%)</span><br><span style="font-size:10px; color:var(--danger); font-weight: 500;">Ликв: ${pos.liq_price.toFixed(4)}</span>`;
+                } else {
+                    tdFut.innerHTML = `<b>${pos.futures_ex} (${pos.leverage}x)</b><br><span style="font-size:12px; color:var(--text-muted);">Вход: ${pos.futures_entry.toFixed(4)}</span><br><span style="font-size:12px; color:var(--text-muted);">- ожидание цены -</span>`;
+                }
+                tr.appendChild(tdFut);
+                
+                // Body PnL
+                const tdBodyPnL = document.createElement('td');
+                if (bodyPnL !== null) {
+                    const sign = bodyPnL >= 0 ? '+' : '';
+                    const cls = bodyPnL >= 0 ? 'pos-rate' : 'neg-rate';
+                    tdBodyPnL.innerHTML = `<span class="${cls}" style="font-weight:600; font-size:14px;">${sign}${bodyPnL.toFixed(2)} USD</span>`;
+                } else {
+                    tdBodyPnL.innerText = '-';
+                }
+                tr.appendChild(tdBodyPnL);
+                
+                // Accum Funding
+                const tdAccum = document.createElement('td');
+                tdAccum.innerHTML = `<span style="font-weight:600; color:var(--success); font-size:14px;">+${accumFunding.toFixed(4)} USD</span> 
+                    <button class="btn-action" onclick="openFundingModal('${pos.id}', ${accumFunding})">✏️</button>`;
+                tr.appendChild(tdAccum);
+                
+                // Current Funding rate
+                const tdRate = document.createElement('td');
+                if (pos.funding_rate !== null) {
+                    const rateSign = pos.funding_rate >= 0 ? '+' : '';
+                    const dailyValue = dailyFunding !== null ? `+${dailyFunding.toFixed(2)} USD` : '-';
+                    tdRate.innerHTML = `<span style="font-weight:600;">${rateSign}${pos.funding_rate.toFixed(4)}%</span><br><span style="font-size:11px; color:var(--text-muted);">каждые ${pos.funding_interval}ч</span><br><span style="font-size:12px; color:var(--success); font-weight:600;">${dailyValue} / день</span>`;
+                } else {
+                    tdRate.innerText = '-';
+                }
+                tr.appendChild(tdRate);
+                
+                // Total PnL
+                const tdTotal = document.createElement('td');
+                if (totalPnL !== null) {
+                    const sign = totalPnL >= 0 ? '+' : '';
+                    const cls = totalPnL >= 0 ? 'pos-rate-high' : 'neg-rate-high';
+                    tdTotal.innerHTML = `<span class="${cls}" style="font-weight:700; font-size:15px;">${sign}${totalPnL.toFixed(2)} USD</span><br><span class="${cls}" style="font-size:12px; font-weight:600;">${sign}${totalPnLPct.toFixed(2)}%</span>`;
+                } else {
+                    tdTotal.innerText = '-';
+                }
+                tr.appendChild(tdTotal);
+                
+                // Actions
+                const tdActions = document.createElement('td');
+                tdActions.style.textAlign = 'center';
+                tdActions.innerHTML = `<button class="btn-action delete" onclick="deletePosition('${pos.id}')" title="Удалить позицию">❌</button>`;
+                tr.appendChild(tdActions);
+                
+                body.appendChild(tr);
+            });
+
+            updatePortfolioSummary(totalInvested, totalCurrentVal, totalPnl, dailyFundingSum);
+        }
+
+        function updatePortfolioSummary(invested, currentVal, pnl, dailyFunding) {
+            document.getElementById('portTotalInvested').innerText = `$${invested.toFixed(2)}`;
+            document.getElementById('portCurrentValue').innerText = `$${currentVal.toFixed(2)}`;
+            
+            const sign = pnl >= 0 ? '+' : '';
+            const pnlColor = pnl >= 0 ? 'var(--success)' : 'var(--danger)';
+            const pct = invested > 0 ? (pnl / invested * 100) : 0;
+            
+            const pnlEl = document.getElementById('portTotalPnl');
+            pnlEl.innerText = `${sign}$${pnl.toFixed(2)}`;
+            pnlEl.style.color = pnlColor;
+            
+            const pnlPctEl = document.getElementById('portTotalPnlPct');
+            pnlPctEl.innerText = `${sign}${pct.toFixed(2)}%`;
+            pnlPctEl.style.color = pnlColor;
+            
+            document.getElementById('portDailyFunding').innerText = `+$${dailyFunding.toFixed(2)}`;
+            
+            const wApy = invested > 0 ? (dailyFunding * 365 / invested * 100) : 0;
+            document.getElementById('portWeightedApy').innerText = `~${wApy.toFixed(1)}% APY`;
+        }
+
+        function openAddModal() {
+            document.getElementById('addPositionModal').style.display = 'flex';
+        }
+        function closeAddModal() {
+            document.getElementById('addPositionModal').style.display = 'none';
+        }
+        
+        function openFundingModal(id, val) {
+            document.getElementById('editFundingPosId').value = id;
+            document.getElementById('editFundingValue').value = val;
+            document.getElementById('editFundingModal').style.display = 'flex';
+        }
+        function closeFundingModal() {
+            document.getElementById('editFundingModal').style.display = 'none';
+        }
+
+        async function submitAddPosition() {
+            const coin = document.getElementById('addCoin').value.trim();
+            const spot_ex = document.getElementById('addSpotEx').value;
+            const spot_entry = document.getElementById('addSpotEntry').value;
+            const spot_qty = document.getElementById('addSpotQty').value;
+            const futures_ex = document.getElementById('addFuturesEx').value;
+            const futures_entry = document.getElementById('addFuturesEntry').value;
+            const futures_qty = document.getElementById('addFuturesQty').value;
+            const leverage = document.getElementById('addLeverage').value;
+            const accum_funding = document.getElementById('addAccumFunding').value;
+            const custom_liq = document.getElementById('addCustomLiq').value;
+
+            if (!coin || !spot_entry || !spot_qty || !futures_entry || !futures_qty || !leverage) {
+                alert('Пожалуйста, заполните все обязательные поля!');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/positions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        coin, spot_ex, spot_entry, spot_qty,
+                        futures_ex, futures_entry, futures_qty, leverage,
+                        accum_funding, custom_liq
+                    })
+                });
+                const res = await response.json();
+                if (res.error) {
+                    alert('Ошибка: ' + res.error);
+                } else {
+                    closeAddModal();
+                    // Clear inputs
+                    document.getElementById('addCoin').value = '';
+                    document.getElementById('addSpotEntry').value = '';
+                    document.getElementById('addSpotQty').value = '';
+                    document.getElementById('addFuturesEntry').value = '';
+                    document.getElementById('addFuturesQty').value = '';
+                    document.getElementById('addAccumFunding').value = '0';
+                    document.getElementById('addCustomLiq').value = '';
+                    loadPositions();
+                }
+            } catch (e) {
+                alert('Ошибка отправки: ' + e);
+            }
+        }
+
+        async function submitFundingUpdate() {
+            const id = document.getElementById('editFundingPosId').value;
+            const accum_funding = document.getElementById('editFundingValue').value;
+            try {
+                const response = await fetch(`/api/positions/${id}/funding`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ accum_funding })
+                });
+                const res = await response.json();
+                if (res.error) {
+                    alert('Ошибка: ' + res.error);
+                } else {
+                    closeFundingModal();
+                    loadPositions();
+                }
+            } catch (e) {
+                alert('Ошибка обновления: ' + e);
+            }
+        }
+
+        async function deletePosition(id) {
+            if (!confirm('Вы уверены, что хотите удалить эту позицию?')) return;
+            try {
+                const response = await fetch(`/api/positions/${id}`, { method: 'DELETE' });
+                const res = await response.json();
+                if (res.error) {
+                    alert('Ошибка: ' + res.error);
+                } else {
+                    loadPositions();
+                }
+            } catch (e) {
+                alert('Ошибка при удалении: ' + e);
+            }
+        }
+
         // Load initial data on page load
         loadData();
+
+        // Polling intervals
+        setInterval(() => {
+            if (currentView === 'grid' || currentView === 'arbitrage') {
+                loadData(false);
+            }
+        }, 30000); // 30 секунд для сканера
+
+        setInterval(() => {
+            if (currentView === 'portfolio') {
+                loadPositions();
+            }
+        }, 15000); // 15 секунд для портфеля
     </script>
 </body>
 </html>"""
@@ -2147,6 +2783,316 @@ def run_check():
         
     rate_str = f"{rate:.4f}%" if rate is not None else "None"
     return f"OK: rate={rate_str}, {scan_status}. Position checked."
+
+# ─── PORTFOLIO LOGIC ──────────────────────────────────────────────────────────
+POSITIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "open_positions.json")
+
+def load_positions():
+    if not os.path.exists(POSITIONS_FILE):
+        return []
+    try:
+        with open(POSITIONS_FILE, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading positions: {e}")
+        return []
+
+def save_positions(positions):
+    try:
+        with open(POSITIONS_FILE, "w") as f:
+            json.dump(positions, f, indent=2)
+    except Exception as e:
+        print(f"Error saving positions: {e}")
+
+def fetch_live_rates_for_coin(coin, spot_ex, futures_ex):
+    spot_price = None
+    futures_price = None
+    funding_rate = None
+    funding_interval = 8
+    
+    # 1. Fetch Spot price
+    if spot_ex == "MEXC":
+        try:
+            url = f"https://api.mexc.com/api/v3/ticker/price?symbol={coin}USDT"
+            data = get_public_json(url)
+            if data and "price" in data:
+                spot_price = float(data.get("price"))
+        except Exception as e:
+            print(f"[Live Fetch] MEXC spot failed for {coin}: {e}")
+    elif spot_ex == "Gate":
+        try:
+            url = f"https://api.gateio.ws/api/v4/spot/tickers?currency_pair={coin}_USDT"
+            data = get_public_json(url)
+            if isinstance(data, list) and len(data) > 0:
+                spot_price = float(data[0].get("last"))
+        except Exception as e:
+            print(f"[Live Fetch] Gate spot failed for {coin}: {e}")
+    elif spot_ex == "Binance":
+        try:
+            url = f"https://api.binance.com/api/v3/ticker/price?symbol={coin}USDT"
+            data = get_public_json(url)
+            if data and "price" in data:
+                spot_price = float(data.get("price"))
+        except Exception as e:
+            print(f"[Live Fetch] Binance spot failed for {coin}: {e}")
+    elif spot_ex == "Bybit":
+        try:
+            url = f"https://api.bybit.com/v5/market/tickers?category=spot&symbol={coin}USDT"
+            data = get_public_json(url)
+            if data and data.get("result", {}).get("list"):
+                spot_price = float(data.get("result", {}).get("list", [{}])[0].get("lastPrice"))
+        except Exception as e:
+            print(f"[Live Fetch] Bybit spot failed for {coin}: {e}")
+
+    # 2. Fetch Futures price, funding rate, and interval
+    if futures_ex == "Bybit":
+        try:
+            url = f"https://api.bybit.com/v5/market/tickers?category=linear&symbol={coin}USDT"
+            data = get_public_json(url)
+            if data and data.get("result", {}).get("list"):
+                item = data.get("result", {}).get("list", [{}])[0]
+                futures_price = float(item.get("markPrice") or item.get("lastPrice") or 0)
+                funding_rate = float(item.get("fundingRate", 0)) * 100
+            
+            # Fetch interval
+            info = get_public_json(f"https://api.bybit.com/v5/market/instruments-info?category=linear&symbol={coin}USDT")
+            if info and info.get("result", {}).get("list"):
+                funding_interval = int(float(info.get("result", {}).get("list", [{}])[0].get("fundingInterval", 480))) / 60
+        except Exception as e:
+            print(f"[Live Fetch] Bybit futures failed for {coin}: {e}")
+            
+    elif futures_ex == "Gate":
+        try:
+            url = f"https://api.gateio.ws/api/v4/futures/usdt/contracts/{coin}_USDT"
+            data = get_public_json(url)
+            if data and "mark_price" in data:
+                futures_price = float(data.get("mark_price", 0))
+                funding_rate = float(data.get("funding_rate", 0)) * 100
+        except Exception as e:
+            print(f"[Live Fetch] Gate futures failed for {coin}: {e}")
+            
+    elif futures_ex == "Binance":
+        try:
+            url = f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={coin}USDT"
+            data = get_public_json(url)
+            if data:
+                if isinstance(data, list):
+                    item = next((x for x in data if x.get("symbol") == f"{coin}USDT"), {})
+                else:
+                    item = data
+                futures_price = float(item.get("markPrice", 0))
+                funding_rate = float(item.get("lastFundingRate", 0)) * 100
+        except Exception as e:
+            print(f"[Live Fetch] Binance futures failed for {coin}: {e}")
+            
+    elif futures_ex == "OKX":
+        try:
+            url = f"https://www.okx.com/api/v5/market/ticker?instId={coin}-USDT-SWAP"
+            data = get_public_json(url)
+            if data and data.get("data"):
+                futures_price = float(data.get("data", [{}])[0].get("last", 0))
+            
+            # Funding rate
+            fr_url = f"https://www.okx.com/api/v5/public/funding-rate?instId={coin}-USDT-SWAP"
+            fr_data = get_public_json(fr_url)
+            if fr_data and fr_data.get("data"):
+                funding_rate = float(fr_data.get("data", [{}])[0].get("fundingRate", 0)) * 100
+        except Exception as e:
+            print(f"[Live Fetch] OKX futures failed for {coin}: {e}")
+            
+    elif futures_ex == "Bitget":
+        try:
+            url = f"https://api.bitget.com/api/v2/mix/market/ticker?symbol={coin}USDT"
+            data = get_public_json(url)
+            if data and data.get("data"):
+                futures_price = float(data.get("data", [{}])[0].get("lastPr", 0))
+            
+            # Funding rate
+            fr_url = f"https://api.bitget.com/api/v2/mix/market/current-funding-rate?symbol={coin}USDT"
+            fr_data = get_public_json(fr_url)
+            if fr_data and fr_data.get("data"):
+                funding_rate = float(fr_data.get("data", [{}])[0].get("fundingRate", 0)) * 100
+        except Exception as e:
+            print(f"[Live Fetch] Bitget futures failed for {coin}: {e}")
+
+    # Fallback to cached scan data if funding rate is None
+    if funding_rate is None and cached_scan_data:
+        funding_rate = cached_scan_data.get("raw_funding", {}).get(coin, {}).get(futures_ex)
+        
+    # Fallback to cached scan data for spot and futures prices
+    if (spot_price is None or futures_price is None) and cached_scan_data:
+        for item in cached_scan_data.get("spot_futures", []):
+            if item.get("symbol") == coin:
+                if spot_price is None and item.get("spot_src") == spot_ex:
+                    spot_price = item.get("price")
+                if futures_price is None and spot_price is not None and item.get("target_exchange") == futures_ex:
+                    futures_price = spot_price * (1.0 + item.get("spread", 0) / 100.0)
+                if funding_rate is None and item.get("target_exchange") == futures_ex:
+                    funding_rate = item.get("rate")
+                    funding_interval = item.get("interval", 8)
+                break
+
+    return {
+        "spot_price": spot_price,
+        "futures_price": futures_price,
+        "funding_rate": funding_rate,
+        "funding_interval": funding_interval
+    }
+
+@app.route('/api/positions', methods=['GET'])
+def api_get_positions():
+    positions = load_positions()
+    enriched = []
+    for pos in positions:
+        coin = pos["coin"]
+        spot_ex = pos["spot_ex"]
+        futures_ex = pos["futures_ex"]
+        
+        rates = fetch_live_rates_for_coin(coin, spot_ex, futures_ex)
+        
+        spot_price = rates["spot_price"]
+        futures_price = rates["futures_price"]
+        funding_rate = rates["funding_rate"]
+        funding_interval = rates["funding_interval"]
+        
+        spot_entry = pos["spot_entry"]
+        spot_qty = pos["spot_qty"]
+        spot_current_val = None
+        spot_pnl = None
+        spot_pnl_pct = None
+        
+        if spot_price is not None:
+            spot_current_val = spot_price * spot_qty
+            spot_pnl = spot_current_val - (spot_entry * spot_qty)
+            spot_pnl_pct = (spot_pnl / (spot_entry * spot_qty)) * 100
+            
+        futures_entry = pos["futures_entry"]
+        futures_qty = pos["futures_qty"]
+        leverage = pos["leverage"]
+        futures_current_val = None
+        futures_pnl = None
+        futures_pnl_pct = None
+        
+        if futures_price is not None:
+            futures_pnl = (futures_entry - futures_price) * futures_qty
+            margin = (futures_entry * futures_qty) / leverage
+            futures_pnl_pct = (futures_pnl / margin) * 100
+            
+        estimated_liq = pos.get("custom_liq")
+        if not estimated_liq:
+            estimated_liq = futures_entry * (1.0 + 1.0 / leverage - 0.01)
+            
+        net_body_pnl = None
+        if spot_pnl is not None and futures_pnl is not None:
+            net_body_pnl = spot_pnl + futures_pnl
+            
+        accum_funding = pos.get("accum_funding", 0.0)
+        total_pnl = None
+        if net_body_pnl is not None:
+            total_pnl = net_body_pnl + accum_funding
+            
+        invested = (spot_entry * spot_qty) + ((futures_entry * futures_qty) / leverage)
+        
+        total_pnl_pct = None
+        if total_pnl is not None:
+            total_pnl_pct = (total_pnl / invested) * 100
+            
+        daily_funding = None
+        if funding_rate is not None and futures_price is not None:
+            short_val = futures_price * futures_qty
+            daily_funding = short_val * (funding_rate / 100.0) * (24.0 / funding_interval)
+            
+        enriched.append({
+            "id": pos["id"],
+            "coin": coin,
+            "spot_ex": spot_ex,
+            "spot_entry": spot_entry,
+            "spot_qty": spot_qty,
+            "spot_price": spot_price,
+            "spot_current_val": spot_current_val,
+            "spot_pnl": spot_pnl,
+            "spot_pnl_pct": spot_pnl_pct,
+            
+            "futures_ex": futures_ex,
+            "futures_entry": futures_entry,
+            "futures_qty": futures_qty,
+            "futures_price": futures_price,
+            "futures_pnl": futures_pnl,
+            "futures_pnl_pct": futures_pnl_pct,
+            "leverage": leverage,
+            "liq_price": estimated_liq,
+            
+            "funding_rate": funding_rate,
+            "funding_interval": funding_interval,
+            "daily_funding": daily_funding,
+            
+            "accum_funding": accum_funding,
+            "net_body_pnl": net_body_pnl,
+            "total_pnl": total_pnl,
+            "total_pnl_pct": total_pnl_pct,
+            "invested": invested,
+            "created_at": pos.get("created_at", "")
+        })
+        
+    return jsonify(enriched)
+
+@app.route('/api/positions', methods=['POST'])
+def api_add_position():
+    data = request.json
+    coin = data.get("coin", "").strip().upper()
+    if not coin:
+        return jsonify({"error": "Coin is required"}), 400
+        
+    try:
+        new_pos = {
+            "id": str(int(time.time())),
+            "coin": coin,
+            "spot_ex": data.get("spot_ex", "MEXC"),
+            "spot_entry": float(data.get("spot_entry", 0.0)),
+            "spot_qty": float(data.get("spot_qty", 0.0)),
+            "futures_ex": data.get("futures_ex", "Bybit"),
+            "futures_entry": float(data.get("futures_entry", 0.0)),
+            "futures_qty": float(data.get("futures_qty", 0.0)),
+            "leverage": float(data.get("leverage", 1.0)),
+            "accum_funding": float(data.get("accum_funding", 0.0)),
+            "custom_liq": float(data.get("custom_liq")) if data.get("custom_liq") else None,
+            "created_at": time.strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        positions = load_positions()
+        positions.append(new_pos)
+        save_positions(positions)
+        return jsonify({"success": True, "position": new_pos})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/api/positions/<pos_id>', methods=['DELETE'])
+def api_delete_position(pos_id):
+    positions = load_positions()
+    new_positions = [p for p in positions if p["id"] != pos_id]
+    if len(new_positions) == len(positions):
+        return jsonify({"error": "Position not found"}), 404
+    save_positions(new_positions)
+    return jsonify({"success": True})
+
+@app.route('/api/positions/<pos_id>/funding', methods=['POST'])
+def api_update_funding(pos_id):
+    data = request.json
+    try:
+        funding = float(data.get("accum_funding", 0.0))
+        positions = load_positions()
+        found = False
+        for p in positions:
+            if p["id"] == pos_id:
+                p["accum_funding"] = funding
+                found = True
+                break
+        if not found:
+            return jsonify({"error": "Position not found"}), 404
+        save_positions(positions)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 if __name__ == "__main__":
     app.run()
