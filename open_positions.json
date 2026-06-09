@@ -1,16 +1,1 @@
-[
-  {
-    "id": "1780961234",
-    "coin": "BEAT",
-    "spot_ex": "MEXC",
-    "spot_entry": 4.11899,
-    "spot_qty": 12.13,
-    "futures_ex": "Bybit",
-    "futures_entry": 4.1505,
-    "futures_qty": 12.0,
-    "leverage": 3.0,
-    "accum_funding": 0.3357,
-    "custom_liq": 8.1292,
-    "created_at": "2026-06-08 12:00:00"
-  }
-]
+[]
