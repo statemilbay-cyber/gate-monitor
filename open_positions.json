@@ -1,16 +1,1 @@
-[
-  {
-    "id": "1781348411",
-    "coin": "HOME",
-    "spot_ex": "MEXC Futures",
-    "spot_entry": 0.03193,
-    "spot_qty": 150.0,
-    "futures_ex": "Bybit",
-    "futures_entry": 0.0334,
-    "futures_qty": 150.0,
-    "leverage": 2.0,
-    "accum_funding": 0.0,
-    "custom_liq": 0.049117,
-    "created_at": "2026-06-13 17:00:11"
-  }
-]
+[]
