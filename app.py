@@ -2819,6 +2819,14 @@ def fetch_live_rates_for_coin(coin, spot_ex, futures_ex):
                 spot_price = float(data.get("price"))
         except Exception as e:
             print(f"[Live Fetch] MEXC spot failed for {coin}: {e}")
+    elif spot_ex in ["MEXC Futures", "MEXC_Futures", "MEXCFutures"]:
+        try:
+            url = f"https://contract.mexc.com/api/v1/contract/ticker?symbol={coin}_USDT"
+            data = get_public_json(url)
+            if data and data.get("success") and data.get("data"):
+                spot_price = float(data["data"].get("lastPrice", 0))
+        except Exception as e:
+            print(f"[Live Fetch] MEXC futures failed for {coin}: {e}")
     elif spot_ex == "Gate":
         try:
             url = f"https://api.gateio.ws/api/v4/spot/tickers?currency_pair={coin}_USDT"
