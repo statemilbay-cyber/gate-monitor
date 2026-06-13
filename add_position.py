@@ -17,7 +17,9 @@ def add_position():
         "leverage": 2.0,
         "accum_funding": 0.0,
         "custom_liq": 0.049117,
-        "created_at": time.strftime('%Y-%m-%d %H:%M:%S')
+        "created_at": time.strftime('%Y-%m-%d %H:%M:%S'),
+        "tp_spread": 0.5,
+        "sl_spread": 7.0
     }
     
     positions = []

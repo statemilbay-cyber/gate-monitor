@@ -20,6 +20,7 @@ GATE_API_SECRET = os.environ.get("GATE_API_SECRET")
 # Глобальные переменные для планировщика сканирования
 last_scan_time = 0
 alerted_coins = {} # symbol -> timestamp
+alerted_portfolio_positions = {} # pos_id_type -> timestamp
 
 # Кэширование результатов сканирования рынка для веб-панели
 cached_scan_data = None
@@ -1914,6 +1915,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <label>Накопленный фандинг (USDT)</label>
                 <input type="number" id="addAccumFunding" class="form-control" step="any" value="0">
             </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Тейк-профит спред (%)</label>
+                    <input type="number" id="addTpSpread" class="form-control" step="any" value="0.5" placeholder="Например: 0.5">
+                </div>
+                <div class="form-group">
+                    <label>Стоп-лосс спред (%)</label>
+                    <input type="number" id="addSlSpread" class="form-control" step="any" value="7.0" placeholder="Например: 7.0">
+                </div>
+            </div>
             <div class="form-buttons">
                 <button class="btn-secondary" onclick="closeAddModal()">Отмена</button>
                 <button class="btn-primary" onclick="submitAddPosition()">Сохранить</button>
@@ -2383,7 +2394,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 
                 // Coin
                 const tdCoin = document.createElement('td');
-                tdCoin.innerHTML = `<span class="coin-name">${pos.coin}</span><br><span style="font-size:10px; color:var(--text-muted);">${pos.created_at}</span>`;
+                const currentSpread = (pos.spot_price && pos.futures_price) 
+                    ? (((pos.futures_price - pos.spot_price) / pos.spot_price) * 100) 
+                    : null;
+                let spreadHtml = '';
+                if (currentSpread !== null) {
+                    spreadHtml = `<br><span style="font-size:11px; font-weight:600; color:var(--primary);">Спред: ${currentSpread.toFixed(3)}%</span><br><span style="font-size:9px; color:var(--text-muted);">Цели: TP ≤${pos.tp_spread}% / SL ≥${pos.sl_spread}%</span>`;
+                } else {
+                    spreadHtml = `<br><span style="font-size:9px; color:var(--text-muted);">Цели: TP ≤${pos.tp_spread}% / SL ≥${pos.sl_spread}%</span>`;
+                }
+                tdCoin.innerHTML = `<span class="coin-name">${pos.coin}</span><br><span style="font-size:10px; color:var(--text-muted);">${pos.created_at}</span>${spreadHtml}`;
                 tr.appendChild(tdCoin);
                 
                 // Spot
@@ -2508,6 +2528,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             const leverage = document.getElementById('addLeverage').value;
             const accum_funding = document.getElementById('addAccumFunding').value;
             const custom_liq = document.getElementById('addCustomLiq').value;
+            const tp_spread = document.getElementById('addTpSpread').value;
+            const sl_spread = document.getElementById('addSlSpread').value;
 
             if (!coin || !spot_entry || !spot_qty || !futures_entry || !futures_qty || !leverage) {
                 alert('Пожалуйста, заполните все обязательные поля!');
@@ -2521,7 +2543,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     body: JSON.stringify({
                         coin, spot_ex, spot_entry, spot_qty,
                         futures_ex, futures_entry, futures_qty, leverage,
-                        accum_funding, custom_liq
+                        accum_funding, custom_liq, tp_spread, sl_spread
                     })
                 });
                 const res = await response.json();
@@ -2537,6 +2559,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     document.getElementById('addFuturesQty').value = '';
                     document.getElementById('addAccumFunding').value = '0';
                     document.getElementById('addCustomLiq').value = '';
+                    document.getElementById('addTpSpread').value = '0.5';
+                    document.getElementById('addSlSpread').value = '7.0';
                     loadPositions();
                 }
             } catch (e) {
@@ -2649,7 +2673,7 @@ def api_scan_force():
 
 @app.route('/check')
 def run_check():
-    global last_scan_time, alerted_coins
+    global last_scan_time, alerted_coins, alerted_portfolio_positions
     alerts = []
     
     # 1. Проверка фандинга BEAT (публичная)
@@ -2695,6 +2719,59 @@ def run_check():
                             f"Цена ликвидации: <b>{liq_price:.4f} USDT</b>\n"
                             f"<i>Срочно пополните баланс фьючерсов или закройте сделку!</i>"
                         )
+                        
+    # 2.5. Проверка спреда открытых позиций из open_positions.json
+    try:
+        positions = load_positions()
+        current_time = time.time()
+        for pos in positions:
+            pos_id = pos.get("id")
+            coin = pos.get("coin")
+            spot_ex = pos.get("spot_ex")
+            futures_ex = pos.get("futures_ex")
+            spot_entry = pos.get("spot_entry", 0.0)
+            futures_entry = pos.get("futures_entry", 0.0)
+            tp_spread = pos.get("tp_spread", 0.5)
+            sl_spread = pos.get("sl_spread", 7.0)
+            
+            # Fetch current live rates
+            rates = fetch_live_rates_for_coin(coin, spot_ex, futures_ex)
+            spot_price = rates.get("spot_price")
+            futures_price = rates.get("futures_price")
+            
+            if spot_price is not None and futures_price is not None:
+                current_spread = ((futures_price - spot_price) / spot_price) * 100
+                entry_spread = ((futures_entry - spot_entry) / spot_entry) * 100 if spot_entry > 0 else 0.0
+                
+                # Check for TP (spread converges)
+                if current_spread <= tp_spread:
+                    cache_key = f"{pos_id}_tp"
+                    if cache_key not in alerted_portfolio_positions or (current_time - alerted_portfolio_positions[cache_key] > 14400):
+                        alerts.append(
+                            f"🟢 <b>АРБИТРАЖНЫЙ СИГНАЛ: ТЕЙК-ПРОФИТ ({coin})!</b>\n"
+                            f"<i>Спред сошелся до <b>{current_spread:.3f}%</b> (Цель: ≤ {tp_spread:.2f}%)</i>\n\n"
+                            f"• Биржи: <b>{spot_ex}</b> (Long) ↔ <b>{futures_ex}</b> (Short)\n"
+                            f"• Входной спред: <b>{entry_spread:.3f}%</b> (по ценам: {spot_entry} / {futures_entry})\n"
+                            f"• Текущие цены: <b>{spot_price:.5f}</b> / <b>{futures_price:.5f}</b>\n"
+                            f"👉 Рекомендуется закрыть обе позиции для фиксации прибыли!"
+                        )
+                        alerted_portfolio_positions[cache_key] = current_time
+                        
+                # Check for SL (spread widens)
+                elif current_spread >= sl_spread:
+                    cache_key = f"{pos_id}_sl"
+                    if cache_key not in alerted_portfolio_positions or (current_time - alerted_portfolio_positions[cache_key] > 14400):
+                        alerts.append(
+                            f"🚨 <b>АРБИТРАЖНЫЙ СИГНАЛ: СТОП-ЛОСС ({coin})!</b>\n"
+                            f"<i>Спред расширился до <b>{current_spread:.3f}%</b> (Лимит: ≥ {sl_spread:.2f}%)</i>\n\n"
+                            f"• Биржи: <b>{spot_ex}</b> (Long) ↔ <b>{futures_ex}</b> (Short)\n"
+                            f"• Входной спред: <b>{entry_spread:.3f}%</b> (по ценам: {spot_entry} / {futures_entry})\n"
+                            f"• Текущие цены: <b>{spot_price:.5f}</b> / <b>{futures_price:.5f}</b>\n"
+                            f"👉 Рекомендуется рассмотреть закрытие позиций для ограничения убытка!"
+                        )
+                        alerted_portfolio_positions[cache_key] = current_time
+    except Exception as e:
+        print(f"Error checking portfolio positions spread: {e}")
                         
     # 3. Периодическое сканирование рынка (раз в 1 час)
     current_time = time.time()
@@ -3039,7 +3116,9 @@ def api_get_positions():
             "total_pnl": total_pnl,
             "total_pnl_pct": total_pnl_pct,
             "invested": invested,
-            "created_at": pos.get("created_at", "")
+            "created_at": pos.get("created_at", ""),
+            "tp_spread": pos.get("tp_spread", 0.5),
+            "sl_spread": pos.get("sl_spread", 7.0)
         })
         
     return jsonify(enriched)
@@ -3064,7 +3143,9 @@ def api_add_position():
             "leverage": float(data.get("leverage", 1.0)),
             "accum_funding": float(data.get("accum_funding", 0.0)),
             "custom_liq": float(data.get("custom_liq")) if data.get("custom_liq") else None,
-            "created_at": time.strftime('%Y-%m-%d %H:%M:%S')
+            "created_at": time.strftime('%Y-%m-%d %H:%M:%S'),
+            "tp_spread": float(data.get("tp_spread")) if data.get("tp_spread") not in [None, ""] else 0.5,
+            "sl_spread": float(data.get("sl_spread")) if data.get("sl_spread") not in [None, ""] else 7.0
         }
         
         positions = load_positions()
