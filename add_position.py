@@ -7,16 +7,16 @@ POSITIONS_FILE = "open_positions.json"
 def add_position():
     pos = {
         "id": str(int(time.time())),
-        "coin": "H",
+        "coin": "HOME",
         "spot_ex": "MEXC Futures",
-        "spot_entry": 0.23212,
-        "spot_qty": 210.0,
+        "spot_entry": 0.03193,
+        "spot_qty": 150.0,
         "futures_ex": "Bybit",
-        "futures_entry": 0.23600,
-        "futures_qty": 210.0,
-        "leverage": 1.0,
+        "futures_entry": 0.03340,
+        "futures_qty": 150.0,
+        "leverage": 2.0,
         "accum_funding": 0.0,
-        "custom_liq": 0.45384,
+        "custom_liq": 0.049117,
         "created_at": time.strftime('%Y-%m-%d %H:%M:%S')
     }
     
