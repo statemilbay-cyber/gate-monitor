@@ -1,1 +1,18 @@
-[]
+[
+  {
+    "id": "1781430106",
+    "coin": "JCT",
+    "spot_ex": "Bitget",
+    "spot_entry": 0.007162,
+    "spot_qty": 7000.0,
+    "futures_ex": "Bybit",
+    "futures_entry": 0.00715,
+    "futures_qty": 7000.0,
+    "leverage": 3.0,
+    "accum_funding": 0.0,
+    "custom_liq": 0.0093008,
+    "created_at": "2026-06-14 15:41:46",
+    "tp_spread": -0.3,
+    "sl_spread": 1.0
+  }
+]

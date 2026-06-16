@@ -427,6 +427,67 @@ def fetch_mexc_spot():
         print(f"Error MEXC spot: {e}")
         return {}
 
+def fetch_bitget_spot():
+    try:
+        data = get_public_json("https://api.bitget.com/api/v2/spot/market/tickers")
+        result = {}
+        if data.get("code") == "00000" and data.get("data"):
+            for item in data["data"]:
+                sym = item.get("symbol", "")
+                if sym.endswith("USDT"):
+                    coin = sym[:-4]
+                    bid = float(item.get("bidPr", 0))
+                    ask = float(item.get("askPr", 0))
+                    spread = round((ask - bid) / bid * 100, 4) if bid > 0 else None
+                    result[coin] = {"vol": float(item.get("usdtVolume", 0)),
+                                    "spread": spread, "price": float(item.get("lastPr", 0)),
+                                    "source": "Bitget"}
+        return result
+    except Exception as e:
+        print(f"Error Bitget spot: {e}")
+        return {}
+
+def fetch_kucoin_spot():
+    try:
+        data = get_public_json("https://api.kucoin.com/api/v1/market/allTickers")
+        result = {}
+        if data.get("code") == "200000" and data.get("data") and data["data"].get("ticker"):
+            for item in data["data"]["ticker"]:
+                sym = item.get("symbol", "")
+                if sym.endswith("-USDT"):
+                    coin = sym[:-5]
+                    bid = float(item.get("buy", 0))
+                    ask = float(item.get("sell", 0))
+                    spread = round((ask - bid) / bid * 100, 4) if bid > 0 else None
+                    result[coin] = {"vol": float(item.get("volValue", 0)),
+                                    "spread": spread, "price": float(item.get("last", 0)),
+                                    "source": "KuCoin"}
+        return result
+    except Exception as e:
+        print(f"Error KuCoin spot: {e}")
+        return {}
+
+def fetch_okx_spot():
+    try:
+        data = get_public_json("https://www.okx.com/api/v5/market/tickers?instType=SPOT")
+        result = {}
+        if data.get("code") == "0" and data.get("data"):
+            for item in data["data"]:
+                inst = item.get("instId", "")
+                if inst.endswith("-USDT"):
+                    coin = inst[:-5]
+                    bid = float(item.get("bidPx", 0))
+                    ask = float(item.get("askPx", 0))
+                    spread = round((ask - bid) / bid * 100, 4) if bid > 0 else None
+                    result[coin] = {"vol": float(item.get("volCcy24h", 0)),
+                                    "spread": spread, "price": float(item.get("last", 0)),
+                                    "source": "OKX"}
+        return result
+    except Exception as e:
+        print(f"Error OKX spot: {e}")
+        return {}
+
+
 def fetch_binance_futures_vol():
     try:
         data = get_public_json("https://fapi.binance.com/fapi/v1/ticker/24hr")
@@ -459,6 +520,12 @@ def get_spot_link(exchange, symbol):
         return f"https://www.gate.io/ru/trade/{symbol}_USDT"
     elif exchange == "MEXC":
         return f"https://www.mexc.com/ru-RU/exchange/{symbol}_USDT"
+    elif exchange == "Bitget":
+        return f"https://www.bitget.com/ru/spot/{symbol}USDT"
+    elif exchange == "KuCoin":
+        return f"https://www.kucoin.com/ru/trade/{symbol}-USDT"
+    elif exchange == "OKX":
+        return f"https://www.okx.com/ru/trade-spot/{symbol.lower()}-usdt"
     return "#"
 
 def get_futures_link(exchange, symbol):
@@ -509,9 +576,9 @@ def calc_hold_period(avg_funding, spread, net_8h, spot_src):
     max_days = max(max_days, min_days + 1)
     return min_days, max_days
 
-def check_coin(coin, bn_f, bb_f, okx_f, bg_f, wb_f, bn_spot, bb_spot, gate, mexc):
+def check_coin(coin, bn_f, bb_f, okx_f, bg_f, wb_f, bn_spot, bb_spot, gate, mexc, bg_spot, kc_spot, okx_spot):
     # Check Spot first
-    sp = best_spot(coin, bn_spot, bb_spot, gate, mexc)
+    sp = best_spot(coin, bn_spot, bb_spot, gate, mexc, bg_spot, kc_spot, okx_spot)
     if sp is None:
         return None
         
@@ -717,7 +784,7 @@ def check_coin(coin, bn_f, bb_f, okx_f, bg_f, wb_f, bn_spot, bb_spot, gate, mexc
         "amortized_fee_8h": round(amortized_fee_8h, 5)
     }
 
-def check_futures_arbitrage(coin, bn_f, bb_f, okx_f, bg_f, wb_f, bn_spot, bb_spot, gate, mexc):
+def check_futures_arbitrage(coin, bn_f, bb_f, okx_f, bg_f, wb_f, bn_spot, bb_spot, gate, mexc, bg_spot, kc_spot, okx_spot):
     # We require the entry and exit fee to open/close two positions:
     # 4 * TAKER_FEE = 0.20%. We amortize it over 21 periods.
     # Annual fee amortization is ~10.4%
@@ -776,7 +843,7 @@ def check_futures_arbitrage(coin, bn_f, bb_f, okx_f, bg_f, wb_f, bn_spot, bb_spo
         return None
         
     # Fetch spot to get price and volume
-    sp = best_spot(coin, bn_spot, bb_spot, gate, mexc)
+    sp = best_spot(coin, bn_spot, bb_spot, gate, mexc, bg_spot, kc_spot, okx_spot)
     if sp is None:
         return None
     price = sp["price"]
@@ -889,6 +956,9 @@ def run_market_scan():
     bb_spot = fetch_bybit_spot()
     gate    = fetch_gate_spot()
     mexc    = fetch_mexc_spot()
+    bg_spot = fetch_bitget_spot()
+    kc_spot = fetch_kucoin_spot()
+    okx_spot = fetch_okx_spot()
     
     bn_fvol = fetch_binance_futures_vol()
     bb_intervals = fetch_bybit_intervals()
@@ -910,12 +980,12 @@ def run_market_scan():
     
     for coin in all_coins:
         # 1. Spot-Futures
-        sf_r = check_coin(coin, bn_f, bb_f, okx_f, bg_f, wb_f, bn_spot, bb_spot, gate, mexc)
+        sf_r = check_coin(coin, bn_f, bb_f, okx_f, bg_f, wb_f, bn_spot, bb_spot, gate, mexc, bg_spot, kc_spot, okx_spot)
         if sf_r is not None:
             spot_futures.append(sf_r)
             
         # 2. Futures-Futures
-        ff_r = check_futures_arbitrage(coin, bn_f, bb_f, okx_f, bg_f, wb_f, bn_spot, bb_spot, gate, mexc)
+        ff_r = check_futures_arbitrage(coin, bn_f, bb_f, okx_f, bg_f, wb_f, bn_spot, bb_spot, gate, mexc, bg_spot, kc_spot, okx_spot)
         if ff_r is not None:
             futures_futures.append(ff_r)
             
@@ -1866,6 +1936,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                             <option value="Gate">Gate.io</option>
                             <option value="Binance">Binance</option>
                             <option value="Bybit">Bybit</option>
+                            <option value="Bitget">Bitget</option>
+                            <option value="KuCoin">KuCoin</option>
+                            <option value="OKX">OKX</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -2326,6 +2399,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             if (ex === 'Bybit') return `https://www.bybit.com/ru-RU/trade/spot/${sym}/USDT`;
             if (ex === 'Gate') return `https://www.gate.io/ru/trade/${sym}_USDT`;
             if (ex === 'MEXC') return `https://www.mexc.com/ru-RU/exchange/${sym}_USDT`;
+            if (ex === 'Bitget') return `https://www.bitget.com/ru/spot/${sym}USDT`;
+            if (ex === 'KuCoin') return `https://www.kucoin.com/ru/trade/${sym}-USDT`;
+            if (ex === 'OKX') return `https://www.okx.com/ru/trade-spot/${sym.toLowerCase()}-usdt`;
             return '#';
         }
 
@@ -2928,6 +3004,30 @@ def fetch_live_rates_for_coin(coin, spot_ex, futures_ex):
                 spot_price = float(data.get("result", {}).get("list", [{}])[0].get("lastPrice"))
         except Exception as e:
             print(f"[Live Fetch] Bybit spot failed for {coin}: {e}")
+    elif spot_ex == "Bitget":
+        try:
+            url = f"https://api.bitget.com/api/v2/spot/market/tickers?symbol={coin}USDT"
+            data = get_public_json(url)
+            if data and data.get("code") == "00000" and data.get("data"):
+                spot_price = float(data["data"][0].get("lastPr", 0))
+        except Exception as e:
+            print(f"[Live Fetch] Bitget spot failed for {coin}: {e}")
+    elif spot_ex == "KuCoin":
+        try:
+            url = f"https://api.kucoin.com/api/v1/market/orderbook/level1?symbol={coin}-USDT"
+            data = get_public_json(url)
+            if data and data.get("code") == "200000" and data.get("data"):
+                spot_price = float(data["data"].get("price", 0))
+        except Exception as e:
+            print(f"[Live Fetch] KuCoin spot failed for {coin}: {e}")
+    elif spot_ex == "OKX":
+        try:
+            url = f"https://www.okx.com/api/v5/market/ticker?instId={coin}-USDT"
+            data = get_public_json(url)
+            if data and data.get("code") == "0" and data.get("data"):
+                spot_price = float(data["data"][0].get("last", 0))
+        except Exception as e:
+            print(f"[Live Fetch] OKX spot failed for {coin}: {e}")
 
     # 2. Fetch Futures price, funding rate, and interval
     if futures_ex == "Bybit":
